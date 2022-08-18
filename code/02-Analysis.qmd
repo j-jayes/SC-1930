@@ -1,0 +1,102 @@
+---
+title: "02-analysis"
+format: html
+---
+
+We want to do a basic cross tab map - Compare population change by parish to access to electricity. 
+
+Need 1910 census ad 1930 census.
+
+```{r}
+df_census <- read_rds("data/population_by_parish_1880_1930")
+
+parish_sample <- df_census %>%
+  distinct(ref_code_char) %>%
+  slice_sample(n = 30) %>% 
+  pull()
+
+df_census %>% 
+  pivot_longer(-ref_code_char) %>% 
+  mutate(name = parse_number(name)) %>% 
+  filter(ref_code_char %in% parish_sample) %>% 
+  ggplot(aes(name, value, colour = ref_code_char)) +
+  geom_line() +
+  scale_y_log10()
+```
+
+Map:
+
+```{r}
+library(histmaps)
+data("geom_meta")
+library(sf)
+p_map <- get_boundaries("1910", "parish")
+st_map <- p_map %>% left_join(geom_meta, by = c("geom_id"))
+st_map <- st_map %>% 
+  mutate(ref_code_char = str_remove(ref_code.x, "SE/"),
+         ref_code_char = str_sub(ref_code_char, end = -4))
+```
+
+Census changes:
+
+```{r}
+df_census_changes <- df_census %>%
+  mutate(
+    mon_inc = case_when(
+      x1880 < x1890 & x1890 < x1900 & x1900 < x1910 ~ 1,
+      x1910 < x1900 & x1900 < x1890 & x1890 < x1880 ~ -1,
+      TRUE ~ 0
+    ),
+    pct_change_1880_1910 = 100 * (x1910 - x1880) / x1880
+  )
+
+df_census_changes_map <- df_census_changes %>% 
+  select(ref_code_char, mon_inc, pct_change_1880_1910) %>% 
+  inner_join(st_map)
+```
+
+What do we find first?
+
+```{r}
+df_census_changes_map %>% 
+  # filter(county == 15) %>%
+  ggplot(aes(fill = mon_inc, geometry = geometry)) +
+  geom_sf(colour = "black") +
+  scale_fill_gradient2() +
+  labs(title = "Increasing population and decreasing population",
+       subtitle = "In Sweden from 1880 to 1910")
+
+df_census_changes_map %>% 
+  filter(county == 5) %>%
+  st_bbox(geometry)
+  ggplot(aes(fill = pct_change_1880_1910, geometry = geometry)) +
+  geom_sf(colour = "black") +
+  scale_fill_gradient2(labels = scales::percent_format(scale = 1))
+
+```
+
+
+```{r}
+library(ggmap)
+
+b_box_nigeria <- c(left = 2, bottom = 3, right = 15, top = 14)
+nigeria_map <- get_map(b_box_nigeria, zoom = 6)
+
+ggmap(nigeria_map) 
+
+```
+
+
+
+Need to work out how to do the intersection thing between the grid and then highlight the counties that do have the intersection at a particular time to track changes. 
+
+
+just show change in population by county in the two groups over the different time periods:1910 to 1930. 
+
+We need the knowledge of the assignment mechanism: does being on the central line increase available power and when? 
+
+obviously we need to have the invention of three phase AC to transmit over long distances. 
+
+If the power generated is DC - it is to be used locally. If AC - then far transmission. Is there a correlation between the areas with lot's of DC power and the areas with a lot of grid cables??
+
+

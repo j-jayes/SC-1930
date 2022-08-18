@@ -3,23 +3,272 @@ title: "01-ingest"
 format: html
 ---
 
-## Quarto
+## Purpose
 
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
-
-## Running Code
-
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+Ingest and EDA on Census data from 1930 Sweden
 
 ```{r}
-1 + 1
+library(tidyverse)
+
+
 ```
 
-You can add options to executable code like this 
+## Starting point: Folk1930.csv
 
 ```{r}
-#| echo: false
-2 * 2
+df <- read.csv(here::here("data", "Folk1930.csv"), sep = "\t")
+
+df <- df %>% as_tibble() %>% 
+  janitor::clean_names()
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+
+```{r}
+df %>% 
+  count(skola, hushtyp) %>% 
+  ggplot(aes(n, skola)) +
+  geom_col() +
+  facet_wrap(~ hushtyp)
+```
+
+### Combine with census counts from earlier period.
+
+```{r}
+df_census <- read_rds("data/census_counts_by_year.rds")
+
+df_census <- df_census %>% 
+  janitor::clean_names()
+
+library(histmaps)
+
+data("geom_meta")
+```
+
+What is the game plan?
+
+What do we have to link? We want to be able to map things onto the map correctly. So let's see what things change here.
+
+```{r}
+library(sf)
+p_map <- get_boundaries("1910", "parish")
+
+st_map <- p_map %>% left_join(geom_meta, by = c("geom_id"))
+
+st_map %>%
+  filter(str_detect(nadkod, "38112")) %>%
+  ggplot(aes(fill = name)) +
+  geom_sf(color = "black") +
+  theme_minimal()
+```
+
+
+Lets just try with the 1880-1910 censuses and look at population growth in one county
+
+try to find 11501000
+
+```{r}
+st_map %>% 
+  filter(str_detect(ref_code.x, "11501000"))
+```
+
+So the census from 1880 to 1910 have nine digit parish codes that map onto the histmap data well. We need to add a leading 0 and convert to char in the census data from 1880 t 1910. We can get the parish names from the histmap package.
+
+Then the 1930 census data is still a bit confusing.
+
+```{r}
+df_census <- df_census %>% 
+  mutate(parse = case_when(
+    nchar(parse) == 8 ~ str_c("0", parse),
+    TRUE ~ parse
+  ))
+```
+
+
+```{r}
+df_census <- df_census %>% 
+  rename(ref_code_char = parse)
+```
+
+## Questions: which parishes see monotonically increasing or monotonically decreasing populations between 1880 and 1930?
+
+```{r}
+st_map <- st_map %>% 
+  mutate(ref_code_char = str_remove(ref_code.x, "SE/"))
+
+st_map_anti_joined <- st_map %>% 
+  anti_join(df_census)
+```
+
+```{r}
+dim(st_map_anti_joined)[1]
+```
+
+We have 57 problems. We can come back to these
+
+## monotonicaly increasing?
+
+```{r}
+df_census_changes <- df_census %>% 
+  pivot_wider(names_from = year, values_from = n) %>% 
+  janitor::clean_names() %>% 
+  mutate(mon_inc = case_when(
+    
+    x1880 < x1890 & x1890 < x1900 & x1900 < x1910 ~ 1,
+    x1910 < x1900 & x1900 < x1890 & x1890 < x1880 ~ -1,
+    TRUE ~ 0
+    
+  ),
+  pct_change = 100 *(x1910 -x1880) / x1880)
+
+
+df_census_changes_map <- df_census_changes %>% 
+  select(ref_code_char, mon_inc, pct_change) %>% 
+  inner_join(st_map)
+
+# 240171000
+# 158201001 = "alingsas" 
+df_census_changes %>% filter(ref_code_char == 158201001)
+```
+
+
+I mean this is quite interesting!
+
+```{r}
+df_census_changes_map %>% 
+  # filter(county == 15) %>%
+  ggplot(aes(fill = mon_inc, geometry = geometry)) +
+  geom_sf(colour = "black") +
+  scale_fill_gradient2()
+
+df_census_changes_map %>% 
+  filter(county == 5) %>%
+  ggplot(aes(fill = pct_change, geometry = geometry)) +
+  geom_sf(colour = "black") +
+  scale_fill_gradient2()
+```
+
+County 5 sees a lot of decrease.
+
+Lets try a bivariate scale
+
+```{r}
+library(biscale)
+
+data <- bi_class(df_census_changes_map, x = mon_inc, y = pct_change, style = "quantile", dim = 3)
+```
+
+
+```{r}
+# install.packages("biscale")
+library(biscale)
+library(cowplot)
+
+# create map
+map <- ggplot() +
+  geom_sf(data = data, mapping = aes(fill = bi_class, geometry = geometry), color = "white", size = 0.1, show.legend = FALSE) +
+  bi_scale_fill(pal = "GrPink", dim = 3) +
+  labs(
+    title = "Race and Income in St. Louis, MO",
+    subtitle = "Gray Pink (GrPink) Palette"
+  ) +
+  bi_theme()
+
+legend <- bi_legend(pal = "GrPink",
+                    dim = 3,
+                    xlab = "Higher % White ",
+                    ylab = "Higher Income ",
+                    size = 8)
+
+finalPlot <- ggdraw() +
+  draw_plot(map, 0, 0, 1, 1) +
+  draw_plot(legend, 0.2, .65, 0.2, 0.2)
+
+finalPlot
+```
+
+
+### Now try and join to 1930s census
+
+1930s census has 5 digit scb code e.g. 18001
+
+```{r}
+df <- df %>%
+  mutate(
+    n_char_scbkod = nchar(scbkod),
+    scbkod = as.character(scbkod)
+  ) %>%
+  mutate(scbkod = case_when(
+    n_char_scbkod == 5 ~ str_c("0", scbkod),
+    TRUE ~ scbkod
+  )) %>%
+  select(-n_char_scbkod)
+
+st_map %>% 
+  select(ref_code_char, name) %>% 
+  filter(str_detect(ref_code_char, "18001"))
+```
+
+So if the 1930 census is incomplete - where is this the case? maybe need to write a report on this.
+
+First check how collapsing down the 9 digit parish identifiers works from the other census?
+
+```{r}
+st_map %>% 
+  select(ref_code_char) %>% 
+  distinct() %>% 
+  mutate(ref_code_char_short = str_sub(ref_code_char, end = -4)) %>% 
+  distinct(ref_code_char_short) 
+```
+
+Now join: 
+
+We lose like 300 parishes here. Not sure if it is NB?
+
+```{r}
+
+df_census <- df_census %>% 
+  mutate(ref_code_char = str_sub(ref_code_char, end = -4)) %>% 
+  group_by(year, ref_code_char) %>% 
+  mutate(n = sum(n)) %>% 
+  ungroup() %>% 
+  distinct()
+
+df_census_1930 <- df %>% 
+  count(scbkod) %>% 
+  rename(ref_code_char = scbkod) %>% 
+  mutate(year = 1930)
+
+df_census_1930 <- df_census_1930 %>% 
+  bind_rows(df_census) %>% 
+  pivot_wider(names_from = year, values_from = n)
+
+df_census_1930 <- df_census_1930 %>% janitor::clean_names()
+
+df_census_1930 <- df_census_1930 %>% 
+  relocate(x1930, .after = x1910)
+
+df_census_1930 %>% 
+  skimr::skim()
+```
+
+
+Draw some pictures:
+
+```{r}
+parish_sample <- df_census_1930 %>%
+  distinct(ref_code_char) %>%
+  slice_sample(n = 30) %>% 
+  pull()
+
+# df_census_1930 %>% write_rds("data/population_by_parish_1880_1930")
+
+df_census_1930 %>% 
+  pivot_longer(-ref_code_char) %>% 
+  mutate(name = parse_number(name)) %>% 
+  filter(ref_code_char %in% parish_sample) %>% 
+  ggplot(aes(name, value, colour = ref_code_char)) +
+  geom_line() +
+  scale_y_log10()
+
+```
+
