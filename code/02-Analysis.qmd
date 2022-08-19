@@ -8,6 +8,8 @@ We want to do a basic cross tab map - Compare population change by parish to acc
 Need 1910 census ad 1930 census.
 
 ```{r}
+library(tidyverse)
+
 df_census <- read_rds("data/population_by_parish_1880_1930")
 
 parish_sample <- df_census %>%
@@ -23,6 +25,13 @@ df_census %>%
   geom_line() +
   scale_y_log10()
 ```
+
+lan codes
+
+```{r}
+lan_codes <- read_rds("data/lan_codes.rds")
+```
+
 
 Map:
 
@@ -42,16 +51,22 @@ Census changes:
 ```{r}
 df_census_changes <- df_census %>%
   mutate(
-    mon_inc = case_when(
+    mon_inc_1880_1910 = case_when(
       x1880 < x1890 & x1890 < x1900 & x1900 < x1910 ~ 1,
       x1910 < x1900 & x1900 < x1890 & x1890 < x1880 ~ -1,
       TRUE ~ 0
     ),
-    pct_change_1880_1910 = 100 * (x1910 - x1880) / x1880
+    mon_inc_1880_1930 = case_when(
+      x1880 < x1890 & x1890 < x1900 & x1900 < x1910 & x1910 < x1930 ~ 1,
+      x1930 < x1910 & x1910 < x1900 & x1900 < x1890 & x1890 < x1880 ~ -1,
+      TRUE ~ 0
+    ),
+    pct_change_1880_1910 = 100 * (x1910 - x1880) / x1880,
+    pct_change_1880_1930 = 100 * (x1930 - x1880) / x1880,
   )
 
 df_census_changes_map <- df_census_changes %>% 
-  select(ref_code_char, mon_inc, pct_change_1880_1910) %>% 
+  select(ref_code_char, mon_inc_1880_1910, mon_inc_1880_1930, pct_change_1880_1910, pct_change_1880_1930) %>% 
   inner_join(st_map)
 ```
 
@@ -60,7 +75,7 @@ What do we find first?
 ```{r}
 df_census_changes_map %>% 
   # filter(county == 15) %>%
-  ggplot(aes(fill = mon_inc, geometry = geometry)) +
+  ggplot(aes(fill = mon_inc_1880_1910, geometry = geometry)) +
   geom_sf(colour = "black") +
   scale_fill_gradient2() +
   labs(title = "Increasing population and decreasing population",
@@ -86,8 +101,6 @@ ggmap(nigeria_map)
 
 ```
 
-
-
 Need to work out how to do the intersection thing between the grid and then highlight the counties that do have the intersection at a particular time to track changes. 
 
 
@@ -99,4 +112,111 @@ obviously we need to have the invention of three phase AC to transmit over long 
 
 If the power generated is DC - it is to be used locally. If AC - then far transmission. Is there a correlation between the areas with lot's of DC power and the areas with a lot of grid cables??
 
+## Plot map function
+
+This has three things we need to do.
+
+First we need to get the coordinates of the bounding box of the objects in the county using st_bbox.
+
+Then we need to get the map and save it as a ggmap object. 
+
+Then we need to plot the map on top of the ggmap object.
+
+Let's do this all in a single function I think.
+
+How to improve? Change zoom based on bounding box - need to think clearly about this
+
+```{r}
+library(sf)
+library(ggmap)
+
+# var can be one of pct_change_1880_1910 or mon_inc_1880_1910
+
+plot_gg_map <- function(tbl, ct, var) {
+  # this function 
+  tbl_trans <- tbl %>%
+    st_as_sf() %>%
+    st_transform(., crs = 4326) %>%
+    filter(county %in% ct)
+
+  ct_lab <- lan_codes %>%
+    filter(lan_code %in% ct) %>%
+    pull(lan) %>%
+    paste(collapse = ", ") %>% 
+    str_remove_all(., " lan")
+  
+  bbcoords <- tbl_trans %>%
+    st_bbox() %>%
+    as.numeric()
+  
+  message("Getting map of ", ct_lab, " län")
+
+  ggmap_obj <- get_map(bbcoords, zoom = 9)
+
+  ggmap_obj %>% write_rds(glue::glue("data/ggmap_objs/county_", ct %>% paste(collapse = "_")))
+
+  ggplot_obj <- tbl_trans
+  
+  message("Drawing map of ", ct_lab, " län")
+
+  ggmap(ggmap_obj) +
+    geom_sf(
+      data = ggplot_obj,
+      aes(fill = pct_change_1880_1910, geometry = geometry),
+      colour = "black",
+      inherit.aes = FALSE,
+      alpha = .5
+    ) +
+    scale_fill_gradient2(labels = scales::percent_format(scale = 1),
+                         high = "darkred",
+                         low = "midnightblue",
+                         mid = "grey80",
+                         midpoint = 0) +
+    labs(
+      title = "Percentage change in population: 1880-1910",
+      subtitle = glue::glue("In ", ct_lab, " län"),
+      fill = "% pop change",
+      x = NULL,
+      y = NULL
+    )
+}
+
+
+plot_gg_map(df_census_changes_map, c(5, 7, 8))
+
+```
+
+Need to do this for each county. Let's write some functions.
+
+Next question to ask is for the counties that see depopulation from rural areas and population growth in urban areas, where do these people come from? Where are they born and what do they do?
+
+Let's first try to link the 1930 censusn in to this map.
+
+
+
+
+
+Trash
+
+```{r}
+get_bb_coords <- function(tbl) {
+  # this function gets the bounding box coordinates of a section of the map.
+  tbl %>%
+    st_as_sf() %>%
+    st_bbox() %>%
+    as.numeric()
+}
+
+get_map_succinct <- function(tbl, ct) {
+  bbox <- tbl %>%
+    st_as_sf() %>%
+    st_transform(., crs = 4326) %>%
+    filter(county == ct) %>%
+    get_bb_coords()
+  
+  get_map(bbox, zoom = 9)
+  
+}
+
+```
 
