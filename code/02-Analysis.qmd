@@ -49,6 +49,9 @@ Map:
 #   write_rds("data/st_map.rds")
 
 st_map <- read_rds("data/st_map.rds")
+
+st_map %>% 
+  select(ref_code_char, name, county)
 ```
 
 Census changes:
@@ -70,6 +73,8 @@ df_census_changes <- df_census %>%
     pct_change_1880_1930 = 100 * (x1930 - x1880) / x1880,
   )
 
+# df_census_changes %>% write_rds("df_census_changes.rds")
+
 df_census_changes_map <- df_census_changes %>% 
   # select(ref_code_char, mon_inc_1880_1910, mon_inc_1880_1930, pct_change_1880_1910, pct_change_1880_1930) %>% 
   inner_join(st_map)
@@ -86,9 +91,76 @@ df_census_changes_map %>%
   labs(title = "Increasing population and decreasing population",
        subtitle = "In Sweden from 1880 to 1910")
 
+
+get_gg_map <- function(parish) {
+  # this function
+  county_highlight <- st_map %>% 
+    filter(ref_code_char == parish) %>% 
+    pull(county)
+
+  tbl <- st_map %>%
+    filter(county == county_highlight) %>% 
+    st_as_sf() %>%
+    st_transform(., crs = 4326)
+
+  bbcoords <- tbl %>%
+    st_bbox() %>%
+    as.numeric()
+
+  get_zoom <- function(bbox) {
+    lonlength <- bbcoords[3] - bbcoords[1]
+    latlength <- bbcoords[4] - bbcoords[2]
+    zoomlon <- ceiling(log2(360 * 2 / lonlength))
+    zoomlat <- ceiling(log2(180 * 2 / latlength))
+    zoom <- max(zoomlon, zoomlat)
+    zoom
+  }
+
+  zm <- get_zoom(bbcoords)
+
+  ggmap_obj <- get_map(bbcoords, zoom = zm)
+  
+  return(ggmap_obj)
+
+} 
+
+
+
+plot_pop_change_county <- function(parish, end_year) {
+  county_highlight <- df_census_changes_map %>%
+    filter(ref_code_char == parish) %>%
+    pull(county)
+
+  var <- ifelse(end_year == 1930, "pct_change_1880_1930", "pct_change_1880_1910")
+
+  ggmap_obj <- get_gg_map(parish)
+
+  ggmap(ggmap_obj) +
+    geom_sf(
+      data = df_census_changes_map %>%
+        filter(county == county_highlight),
+      aes(fill = pct_change_1880_1930, geometry = geometry),
+      colour = "black",
+      inherit.aes = FALSE,
+      alpha = .5
+    ) +
+    scale_fill_gradient2(
+      low = "#2c7fb8",
+      high = "#f03b20",
+      midpoint = 0,
+      mid = "#ffffff",
+      na.value = "#FFFF00"
+    ) +
+    labs(title = "Title")
+}
+
+plot_pop_change_county(parish, 1930)
+
+
+
 df_census_changes_map %>% 
   filter(county == 5) %>%
-  ggplot(aes(fill = pct_change_1880_1910, geometry = geometry)) +
+  ggplot(aes(fill = pct_change_1880_1930, geometry = geometry)) +
   geom_sf(colour = "black") +
   scale_fill_gradient2(labels = scales::percent_format(scale = 1))
 
@@ -192,8 +264,7 @@ plot_gg_map <- function(tbl, ct, var) {
 }
 
 
-plot_gg_map(df_census_changes_map, c(24, 25), pct_change_1880_1910)
-
+plot_gg_map(df_census_changes_map, 5, pct_change_1880_1930)
 ```
 
 
@@ -276,8 +347,8 @@ df_census_changes_map %>%
   st_as_sf() %>%
   st_transform(., crs = 4326) %>%
   ggplot() +
-  geom_sf(aes(fill = x1930, geometry = geometry)) +
-  scale_fill_viridis_c(na.value = "#FFFF00") +
+  geom_sf(aes(fill = x1930, geometry = geometry), colour = "black") +
+  scale_fill_viridis_c(option = "A", na.value = "#FFFF00") +
   labs(
     title = "Population in Sweden by parish in 1930",
     caption = "Source: 1930 census",
@@ -330,7 +401,8 @@ So the birth parishes are complete - but the current parishes of the 1930 census
 ```{r}
 df %>% 
   count(scbkod,
-        fscbkod)
+        fscbkod) 
+  # write_rds("birth_place_counts.rds")
 
 ```
 
@@ -434,8 +506,6 @@ map_migration_counts <- function(parish) {
 # test
 map_migration_counts("148022")
 map_migration_counts("016201")
-
-
 ```
 
 That works well - now present it
@@ -445,7 +515,6 @@ and create a function that shows where they moved from prior to this, rather tha
 ```{r}
 df %>% 
   skimr::skim()
-
 ```
 
 For those from within the län, where do they come from? Function to do this - one input - just the parish code.
@@ -458,19 +527,19 @@ Then it does the ggmap thing, then it plots the map - think about colours.
 within_lan_migrants <- function(parish) {
   # what is the lan number?
   parish_and_county_codes <- read_rds("parish_and_county_codes.rds")
-  
-  lan_highlight <- parish_and_county_codes %>% 
-    filter(scbkod == parish) %>% 
+
+  lan_highlight <- parish_and_county_codes %>%
+    filter(scbkod == parish) %>%
     pull(lannr)
 
   # now count the places of birth of those born inside the lan
-  parish_of_birth_counts <- df %>% 
-    filter(scbkod == parish) %>% 
-    inner_join(parish_and_county_codes, by = c("fscbkod" = "scbkod")) %>% 
-    filter(lannr == lan_highlight) %>% 
-    count(fscbkod) %>% 
+  parish_of_birth_counts <- df %>%
+    filter(scbkod == parish) %>%
+    inner_join(parish_and_county_codes, by = c("fscbkod" = "scbkod")) %>%
+    filter(lannr == lan_highlight) %>%
+    count(fscbkod) %>%
     filter(fscbkod != parish)
-  
+
   # map of parishes
   st_map <- read_rds("data/st_map.rds")
 
@@ -479,10 +548,10 @@ within_lan_migrants <- function(parish) {
 
   st_map_single <- st_map %>%
     filter(ref_code_char == parish)
-  
-  st_map_counts <- st_map %>% 
+
+  st_map_counts <- st_map %>%
     inner_join(parish_of_birth_counts, by = c("ref_code_char" = "fscbkod"))
-  
+
   # layer up the map - start with a background with ggmap?
 
   bbcoords <- st_map_counts %>%
@@ -505,7 +574,7 @@ within_lan_migrants <- function(parish) {
   ggmap_obj <- get_map(bbcoords, zoom = zm)
 
   ggmap(ggmap_obj) +
-  # ggplot() +
+    # ggplot() +
     geom_sf(
       data = st_map_counts,
       aes(fill = n, geometry = geometry),
@@ -542,10 +611,109 @@ within_lan_migrants <- function(parish) {
 within_lan_migrants("016201")
 within_lan_migrants("248006")
 within_lan_migrants("148022")
+```
 
+Of the parishes that grow the fastest, what are the most common job titles and job codes??
+
+divided by whether or not you were born in the parish. See if there is a skill differential. That's the interesting point.
+
+make a point of the missing job titles and job codes.
+
+```{r}
+df %>% 
+  filter(scbkod == "016201") %>% 
+  count(yrke, sort = T)
 
 
 ```
+
+
+## Function to get the number of people born inside the parish, lan and outside.
+
+```{r}
+get_n_born_where <- function(parish) {
+  message("Getting people born in ", parish)
+  lan_number <- df %>%
+    filter(scbkod == parish) %>%
+    mutate(lan_number = str_sub(scbkod, 1, 2)) %>%
+    distinct(lan_number) %>% 
+    pull(lan_number)
+
+  n_pop_1930 <- df %>%
+    filter(scbkod == parish) %>%
+    count() %>%
+    pull()
+
+  n_born_in_parish <- df %>%
+    filter(scbkod == parish) %>%
+    filter(scbkod == fscbkod) %>%
+    count() %>%
+    pull()
+
+  n_born_in_county <- df %>%
+    filter(scbkod == parish) %>%
+    filter(scbkod != fscbkod) %>%
+    mutate(
+      birth_lan_code = str_sub(fscbkod, 1, 2),
+    ) %>%
+    filter(birth_lan_code == lan_number) %>%
+    count() %>%
+    pull()
+
+  n_born_elsewhere <- n_pop_1930 - n_born_in_parish - n_born_in_county
+
+  origin_stats <- tibble(n_pop_1930, n_born_in_parish, n_born_in_county, n_born_elsewhere)
+  
+  origin_stats
+    # pivot_longer(-n_pop_1930) %>%
+    # mutate(
+    #   pct = scales::percent(value / sum(value)),
+    #   value_str = scales::number(value),
+    #   name_str = str_remove_all(name, "^n_"),
+    #   name_str = str_replace_all(name_str, "_", " "),
+    #   name_str = str_to_title(name_str)
+    # )
+
+  # origin_stats %>% mutate(parish = parish)
+}
+
+get_n_born_where("051309")
+```
+
+Try a leaflet map rather:
+
+to make this more tidy I should summarise the data set with all the things we need
+
+```{r}
+test <- df %>%
+  distinct(scbkod) %>% 
+  # tail(10) %>% 
+  mutate(data = map(scbkod , possibly(get_n_born_where, "failed"))) %>% 
+  unnest()
+
+# test %>% write_rds("parish_birth_stats.rds")
+
+```
+
+
+```{r}
+df %>% 
+  group_by(scbkod) %>% 
+  count() %>% 
+  ungroup()
+
+df_census_changes
+
+
+library(leaflet)
+
+leaflet() %>% 
+  setView(lng = 12,
+          lat = 56,
+          zoom = 4) %>% 
+  addProviderTiles("CartoDB.Positron")
+```
+
 
 
 

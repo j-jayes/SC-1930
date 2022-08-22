@@ -23,6 +23,8 @@ df <- df %>% as_tibble() %>%
 ```
 
 
+
+
 ```{r}
 df %>% 
   count(skola, hushtyp) %>% 
@@ -202,13 +204,6 @@ df <- df %>%
     TRUE ~ scbkod
   )) %>%
   select(-n_char_scbkod)
-
-df %>% 
-  select(scbkod, )
-
-df %>% view(
-  
-)
 
 st_map %>% 
   select(ref_code_char, name) %>% 
