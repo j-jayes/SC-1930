@@ -36,14 +36,19 @@ lan_codes <- read_rds("data/lan_codes.rds")
 Map:
 
 ```{r}
-library(histmaps)
-data("geom_meta")
-library(sf)
-p_map <- get_boundaries("1910", "parish")
-st_map <- p_map %>% left_join(geom_meta, by = c("geom_id"))
-st_map <- st_map %>% 
-  mutate(ref_code_char = str_remove(ref_code.x, "SE/"),
-         ref_code_char = str_sub(ref_code_char, end = -4))
+# library(histmaps)
+# data("geom_meta")
+# library(sf)
+# p_map <- get_boundaries("1910", "parish")
+# st_map <- p_map %>% left_join(geom_meta, by = c("geom_id"))
+# st_map <- st_map %>% 
+#   mutate(ref_code_char = str_remove(ref_code.x, "SE/"),
+#          ref_code_char = str_sub(ref_code_char, end = -4))
+
+# st_map %>% 
+#   write_rds("data/st_map.rds")
+
+st_map <- read_rds("data/st_map.rds")
 ```
 
 Census changes:
@@ -66,7 +71,7 @@ df_census_changes <- df_census %>%
   )
 
 df_census_changes_map <- df_census_changes %>% 
-  select(ref_code_char, mon_inc_1880_1910, mon_inc_1880_1930, pct_change_1880_1910, pct_change_1880_1930) %>% 
+  # select(ref_code_char, mon_inc_1880_1910, mon_inc_1880_1930, pct_change_1880_1910, pct_change_1880_1930) %>% 
   inner_join(st_map)
 ```
 
@@ -83,23 +88,12 @@ df_census_changes_map %>%
 
 df_census_changes_map %>% 
   filter(county == 5) %>%
-  st_bbox(geometry)
   ggplot(aes(fill = pct_change_1880_1910, geometry = geometry)) +
   geom_sf(colour = "black") +
   scale_fill_gradient2(labels = scales::percent_format(scale = 1))
 
 ```
 
-
-```{r}
-library(ggmap)
-
-b_box_nigeria <- c(left = 2, bottom = 3, right = 15, top = 14)
-nigeria_map <- get_map(b_box_nigeria, zoom = 6)
-
-ggmap(nigeria_map) 
-
-```
 
 Need to work out how to do the intersection thing between the grid and then highlight the counties that do have the intersection at a particular time to track changes. 
 
@@ -133,7 +127,7 @@ library(ggmap)
 # var can be one of pct_change_1880_1910 or mon_inc_1880_1910
 
 plot_gg_map <- function(tbl, ct, var) {
-  # this function 
+  # this function
   tbl_trans <- tbl %>%
     st_as_sf() %>%
     st_transform(., crs = 4326) %>%
@@ -142,49 +136,127 @@ plot_gg_map <- function(tbl, ct, var) {
   ct_lab <- lan_codes %>%
     filter(lan_code %in% ct) %>%
     pull(lan) %>%
-    paste(collapse = ", ") %>% 
+    paste(collapse = ", ") %>%
     str_remove_all(., " lan")
-  
+
   bbcoords <- tbl_trans %>%
     st_bbox() %>%
     as.numeric()
-  
-  message("Getting map of ", ct_lab, " län")
 
-  ggmap_obj <- get_map(bbcoords, zoom = 9)
+  get_zoom <- function(bbox) {
+    lonlength <- bbcoords[3] - bbcoords[1]
+    latlength <- bbcoords[4] - bbcoords[2]
+    zoomlon <- ceiling(log2(360 * 2 / lonlength))
+    zoomlat <- ceiling(log2(180 * 2 / latlength))
+    zoom <- max(zoomlon, zoomlat)
+    zoom
+  }
+
+  zm <- get_zoom(bbcoords)
+
+  message("Zoom is: ", zm, "\nGetting map of ", ct_lab, " län")
+
+  ggmap_obj <- get_map(bbcoords, zoom = zm)
 
   ggmap_obj %>% write_rds(glue::glue("data/ggmap_objs/county_", ct %>% paste(collapse = "_")))
 
   ggplot_obj <- tbl_trans
-  
+
   message("Drawing map of ", ct_lab, " län")
 
   ggmap(ggmap_obj) +
     geom_sf(
       data = ggplot_obj,
-      aes(fill = pct_change_1880_1910, geometry = geometry),
+      aes(fill = {{ var }}, geometry = geometry),
       colour = "black",
       inherit.aes = FALSE,
       alpha = .5
     ) +
-    scale_fill_gradient2(labels = scales::percent_format(scale = 1),
-                         high = "darkred",
-                         low = "midnightblue",
-                         mid = "grey80",
-                         midpoint = 0) +
+    scale_fill_gradient2(
+      low = "#2c7fb8",
+      high = "#f03b20",
+      midpoint = 0,
+      mid = "#ffffff",
+      na.value = "#FFFF00"
+    ) +
+    # scale_fill_gradientn(colours = colorspace::diverge_hcl(7),
+    # na.value = "#ffffff") +
     labs(
       title = "Percentage change in population: 1880-1910",
       subtitle = glue::glue("In ", ct_lab, " län"),
       fill = "% pop change",
+      caption = "Yellow areas have missing data",
       x = NULL,
       y = NULL
     )
 }
 
 
-plot_gg_map(df_census_changes_map, c(5, 7, 8))
+plot_gg_map(df_census_changes_map, c(24, 25), pct_change_1880_1910)
 
 ```
+
+
+Three fold map with names of counties that were the highest and then column plot and then a line plot.
+
+```{r}
+df_census_changes_map_top_changes <- df_census_changes_map %>%
+  mutate(sign = ifelse(pct_change_1880_1930 > 0, "Pop increase", "Pop decrease")) %>%
+  group_by(sign) %>%
+  slice_max(abs(pct_change_1880_1930), n = 12) %>%
+  ungroup() %>% 
+  mutate(name = fct_reorder(name, pct_change_1880_1930))
+
+
+df_census_changes_map_top_changes %>%
+  ggplot(aes(pct_change_1880_1930, name)) +
+  geom_col() +
+  scale_x_continuous(labels = scales::percent_format(scale = 1)) +
+  labs(
+    title = "Percentage change in population by parish",
+    subtitle = "1880 to 1910",
+    x = "% change in pop",
+    y = NULL
+  )
+
+plot_pop_changes <- function(sg) {
+  df_census_changes_map_top_changes %>%
+    filter(sign == sg) %>%
+    select(name, x1880:x1930) %>%
+    pivot_longer(-c(name), names_to = "year", values_to = "pop") %>%
+    mutate(year = parse_number(year)) %>%
+    ggplot(aes(year, pop, colour = name)) +
+    geom_line() +
+    gghighlight::gghighlight() +
+    # scale_y_log10() +
+    scale_y_continuous(labels = scales::number_format()) +
+    labs(
+      x = NULL,
+      y = "Population (log scale)"
+    )
+}
+
+plot_pop_changes("Pop increase")
+plot_pop_changes("Pop decrease")
+
+
+plot_gg_map(df_census_changes_map_top_changes %>%
+  filter(sign == "Pop decrease"), c(1:25), pct_change_1880_1930) +
+  scale_fill_gradient2(
+    low = "#2c7fb8",
+    high = "#f03b20",
+    midpoint = 0,
+    mid = "#ffffff",
+    na.value = "#FFFF00"
+  ) +
+  labs(subtitle = NULL)
+
+```
+
+Anton's family were from Uppsala - who were priests then they had to move up North to become miners! Missionaries to the Sammi. 
+
+
+
 
 Need to do this for each county. Let's write some functions.
 
@@ -193,6 +265,287 @@ Next question to ask is for the counties that see depopulation from rural areas 
 Let's first try to link the 1930 censusn in to this map.
 
 
+Another question we need to answer: 
+
+Where is the 1930 census complete??
+
+```{r}
+# plot_gg_map(df_census_changes_map, c(1:5), x1930)
+
+df_census_changes_map %>%
+  st_as_sf() %>%
+  st_transform(., crs = 4326) %>%
+  ggplot() +
+  geom_sf(aes(fill = x1930, geometry = geometry)) +
+  scale_fill_viridis_c(na.value = "#FFFF00") +
+  labs(
+    title = "Population in Sweden by parish in 1930",
+    caption = "Source: 1930 census",
+    subtitle = "Yellow filled are missing parishes"
+  )
+```
+
+## Now we need to caluclate the birth places of people in the 1930 census and aggregate up to lan level.
+
+Start by cutting down this census
+
+```{r}
+# df <- read.csv(here::here("data", "Folk1930.csv"), sep = "\t")
+# 
+# df <- df %>% as_tibble() %>% 
+#   janitor::clean_names()
+# 
+# df %>% head(20) %>% view()
+# 
+# df <- df %>%
+#   mutate(
+#     n_char_scbkod = nchar(scbkod),
+#     scbkod = as.character(scbkod)
+#   ) %>%
+#   mutate(scbkod = case_when(
+#     n_char_scbkod == 5 ~ str_c("0", scbkod),
+#     TRUE ~ scbkod
+#   )) %>%
+#   select(-n_char_scbkod)
+# 
+# df %>%
+#   select(scbkod, yrke, yrkkod, fodar, fscbkod, kon, civ, inflar, inflfors, inflscb, skola,
+#          inkomst, formogh) %>%
+#   write_rds("data/folk_1930_short.rds")
+
+# df %>% 
+#   select(lannr, forsnr, scbkod) %>% 
+#   distinct() %>% 
+#   write_rds("parish_and_county_codes.rds")
+```
+
+```{r}
+df <- read_rds("data/folk_1930_short.rds")
+```
+
+Questions I need to answer - how many of the infar vars are complete, vs the birth ones?
+
+So the birth parishes are complete - but the current parishes of the 1930 census are just 
+
+```{r}
+df %>% 
+  count(scbkod,
+        fscbkod)
+
+```
+
+Should aggregate up to lan level. let's work on this now
+
+```{r}
+parish_and_county_codes <- read_rds("parish_and_county_codes.rds")
+```
+
+okay done
+
+Now we want to show where the people came from who moved to the top growing parishes.
+
+```{r}
+df_census_changes_map_top_changes %>% 
+  arrange(desc(pct_change_1880_1930)) %>% 
+  pull(ref_code_char)
+
+```
+
+Let's do it for these three: 248006, 016201 and 148022
+
+```{r}
+map_migration_counts <- function(parish) {
+  migration_counts <- df %>%
+    filter(scbkod == parish) %>%
+    inner_join(parish_and_county_codes, by = c("fscbkod" = "scbkod")) %>%
+    count(lannr) %>%
+    rename(lan_code = lannr)
+
+  st_map <- read_rds("data/st_map.rds")
+
+  st_map <- st_map %>%
+    st_transform(., crs = 4326)
+
+  st_map_single <- st_map %>%
+    filter(ref_code_char == parish)
+
+  county_map <- read_rds("data/county_map.rds") %>%
+    st_transform(., crs = 4326)
+
+  county_map <- county_map %>%
+    inner_join(migration_counts)
+
+  # layer up the map - start with a background with ggmap?
+
+  bbcoords <- county_map %>%
+    st_bbox() %>%
+    as.numeric()
+
+  get_zoom <- function(bbox) {
+    lonlength <- bbcoords[3] - bbcoords[1]
+    latlength <- bbcoords[4] - bbcoords[2]
+    zoomlon <- ceiling(log2(360 * 2 / lonlength))
+    zoomlat <- ceiling(log2(180 * 2 / latlength))
+    zoom <- max(zoomlon, zoomlat)
+    zoom
+  }
+
+  zm <- get_zoom(bbcoords)
+
+  message("Zoom is: ", zm)
+
+  ggmap_obj <- get_map(bbcoords, zoom = zm)
+
+  ggmap(ggmap_obj) +
+  # ggplot() +
+    geom_sf(
+      data = county_map,
+      aes(fill = n, geometry = geometry),
+      colour = "black",
+      inherit.aes = FALSE,
+      alpha = .5
+    ) +
+    geom_sf(
+      data = st_map_single,
+      aes(geometry = geometry),
+      fill = "#FFFF00",
+      colour = "black",
+      inherit.aes = FALSE,
+    ) +
+    scale_fill_gradient2(
+      low = "#2c7fb8",
+      high = "#f03b20",
+      midpoint = 0,
+      mid = "#ffffff",
+      na.value = "#FFFF00"
+    ) +
+    # scale_fill_gradientn(colours = colorspace::diverge_hcl(7),
+    # na.value = "#ffffff") +
+    labs(
+      title = "Souce of residents born out of Parish",
+      subtitle = glue::glue("In ", parish),
+      # fill = "% pop change",
+      # caption = "Yellow areas have missing data",
+      x = NULL,
+      y = NULL
+    )
+}
+
+# test
+map_migration_counts("148022")
+map_migration_counts("016201")
+
+
+```
+
+That works well - now present it
+
+and create a function that shows where they moved from prior to this, rather than born. 
+
+```{r}
+df %>% 
+  skimr::skim()
+
+```
+
+For those from within the län, where do they come from? Function to do this - one input - just the parish code.
+
+So give it the parish code, then it filters down to just the län. 
+
+Then it does the ggmap thing, then it plots the map - think about colours.
+
+```{r}
+within_lan_migrants <- function(parish) {
+  # what is the lan number?
+  parish_and_county_codes <- read_rds("parish_and_county_codes.rds")
+  
+  lan_highlight <- parish_and_county_codes %>% 
+    filter(scbkod == parish) %>% 
+    pull(lannr)
+
+  # now count the places of birth of those born inside the lan
+  parish_of_birth_counts <- df %>% 
+    filter(scbkod == parish) %>% 
+    inner_join(parish_and_county_codes, by = c("fscbkod" = "scbkod")) %>% 
+    filter(lannr == lan_highlight) %>% 
+    count(fscbkod) %>% 
+    filter(fscbkod != parish)
+  
+  # map of parishes
+  st_map <- read_rds("data/st_map.rds")
+
+  st_map <- st_map %>%
+    st_transform(., crs = 4326)
+
+  st_map_single <- st_map %>%
+    filter(ref_code_char == parish)
+  
+  st_map_counts <- st_map %>% 
+    inner_join(parish_of_birth_counts, by = c("ref_code_char" = "fscbkod"))
+  
+  # layer up the map - start with a background with ggmap?
+
+  bbcoords <- st_map_counts %>%
+    st_bbox() %>%
+    as.numeric()
+
+  get_zoom <- function(bbox) {
+    lonlength <- bbcoords[3] - bbcoords[1]
+    latlength <- bbcoords[4] - bbcoords[2]
+    zoomlon <- ceiling(log2(360 * 2 / lonlength))
+    zoomlat <- ceiling(log2(180 * 2 / latlength))
+    zoom <- max(zoomlon, zoomlat)
+    zoom
+  }
+
+  zm <- get_zoom(bbcoords)
+
+  message("Zoom is: ", zm)
+
+  ggmap_obj <- get_map(bbcoords, zoom = zm)
+
+  ggmap(ggmap_obj) +
+  # ggplot() +
+    geom_sf(
+      data = st_map_counts,
+      aes(fill = n, geometry = geometry),
+      colour = "black",
+      inherit.aes = FALSE,
+      alpha = .5
+    ) +
+    geom_sf(
+      data = st_map_single,
+      aes(geometry = geometry),
+      fill = "#FFFF00",
+      colour = "black",
+      inherit.aes = FALSE,
+    ) +
+    scale_fill_gradient2(
+      low = "#2c7fb8",
+      high = "#f03b20",
+      midpoint = 0,
+      mid = "#ffffff",
+      na.value = "#FFFF00"
+    ) +
+    # scale_fill_gradientn(colours = colorspace::diverge_hcl(7),
+    # na.value = "#ffffff") +
+    labs(
+      title = "Souce of residents born out of Parish",
+      subtitle = glue::glue("In ", parish),
+      # fill = "% pop change",
+      # caption = "Yellow areas have missing data",
+      x = NULL,
+      y = NULL
+    )
+}
+
+within_lan_migrants("016201")
+within_lan_migrants("248006")
+within_lan_migrants("148022")
+
+
+
+```
 
 
 

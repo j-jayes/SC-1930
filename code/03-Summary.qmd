@@ -1,0 +1,14 @@
+---
+title: "What do we want to show?"
+format: html
+---
+
+## What data do we use? Census
+
+## What areas are seeing an increase in population? 
+
+## Where are people coming from in these places? 
+
+## What are the next steps?
+
+Tie in to the other data sources that we are collecting.
