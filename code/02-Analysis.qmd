@@ -714,7 +714,163 @@ leaflet() %>%
   addProviderTiles("CartoDB.Positron")
 ```
 
+## What are the electricity parishes?
 
+```{r}
+parish_map <- read_rds("mpttp_parishes.rds")
+
+# 60.5686° N, 17.4489° E älvkarleby
+
+# 58.2750° N, 12.2727° E Olidan 
+# 
+# hydro <- tibble(name = c("älvkarleby", "olidan"),
+#        x = c(17.4489, 12.2727),
+#        y = c(60.5686,58.2750)) %>% 
+#   mutate()
+
+hydro <- st_sf(st_sfc(st_point(c(17.4489, 60.5686)),st_point(c(12.2727, 58.2750))), crs = 4326)
+
+hydro_1 <- st_sf(a = 1, st_sfc(st_point(c(17.4489, 60.5686))), crs = 4326)
+
+hydro_2 <- st_sf(a = 2, st_sfc(st_point(c(12.2727, 58.2750))), crs = 4326)
+
+hydro_1 %>% bind_rows(hydro_2)
+
+parish_map %>% 
+  st_buffer(dist = 5000) %>% 
+  st_join(hydro) %>% 
+  ggplot() +
+  geom_sf() 
+
+
+
+
+```
+
+
+## Wealth and gini maps
+
+Starting with mean income and wealth
+
+```{r}
+incomes <- df %>% 
+  filter(!is.na(inkomst)) %>% 
+  group_by(scbkod) %>% 
+  summarise(mean_income = mean(inkomst),
+            log_mean_income = log(mean(inkomst)))
+
+wealth <- df %>% 
+  filter(!is.na(formogh)) %>% 
+  group_by(scbkod) %>% 
+  summarise(mean_wealth = mean(formogh),
+            log_mean_wealth = log(mean(formogh)))
+
+
+
+```
+
+Now looking at the ginis
+
+```{r}
+library(ineq)
+
+ineq(c(3, 4, 5, 8), type = "Gini")
+
+incomes <- df %>% 
+  filter(!is.na(inkomst),
+         scbkod  == "018001") %>% 
+  select(inkomst) %>% 
+  pull()
+
+income
+ineq(incomes, type = "Gini")
+
+```
+
+### Function to get gini coefficient
+
+```{r}
+get_gini <- function(parish) {
+  message("Getting gini from ", parish)
+  incomes <- df %>%
+    filter(!is.na(formogh),
+           scbkod == parish) %>% 
+    pull(formogh)
+  
+  ineq(incomes, type = "Gini")
+}
+
+ginis <- df %>% 
+  distinct(scbkod) %>% 
+  mutate(gini = map(scbkod, possibly(get_gini, otherwise = "failed")))
+
+income_ginis <- ginis %>% 
+  unnest(gini)
+
+# income_ginis %>% write_rds("income_ginis.rds")
+
+# wealth ginis
+
+# income_ginis %>% write_rds("wealth_ginis.rds")
+
+
+income_ginis <- read_rds("income_ginis.rds") %>% 
+  rename(income_gini = gini) 
+wealth_ginis <- read_rds("wealth_ginis.rds") %>% 
+  rename(wealth_gini = gini) 
+
+ginis <- income_ginis %>% 
+  inner_join(wealth_ginis)
+
+wealth_and_income <- ginis %>% 
+  inner_join(incomes) %>% 
+  inner_join(wealth)
+
+wealth_and_income <- wealth_and_income %>% 
+  mutate(across(contains("gini"), .fns = ~ .x * 100))
+
+wealth_and_income %>% write_rds("wealth_and_income.rds")
+
+
+```
+
+## Join to df census changes
+
+```{r}
+df_census_changes <- read_rds("df_census_changes.rds")
+
+wealth_and_income <- read_rds("wealth_and_income.rds")
+
+df_census_changes <- df_census_changes %>% 
+  left_join(wealth_and_income, by = c("ref_code_char" = "scbkod"))
+
+df_census_changes <- df_census_changes %>%
+  pivot_longer(-ref_code_char, names_to = "census_change_series") %>%
+  rename(parish = ref_code_char) %>%
+  mutate(census_change_series = case_when(
+    census_change_series == "x1880" ~ "Population in 1880",
+    census_change_series == "x1890" ~ "Population in 1890",
+    census_change_series == "x1900" ~ "Population in 1900",
+    census_change_series == "x1910" ~ "Population in 1910",
+    census_change_series == "x1930" ~ "Population in 1930",
+    census_change_series == "mon_inc_1880_1910" ~ "Population change 1880:1910 (binary)",
+    census_change_series == "mon_inc_1880_1930" ~ "Population change 1880:1930 (binary)",
+    census_change_series == "pct_change_1880_1910" ~ "Population change 1880:1910 (pct)",
+    census_change_series == "pct_change_1880_1930" ~ "Population change 1880:1930 (pct)",
+    census_change_series == "income_gini" ~ "Income gini in 1930",
+    census_change_series == "wealth_gini" ~ "Wealth gini in 1930",
+    census_change_series == "mean_income" ~ "Mean income in 1930",
+    census_change_series == "log_mean_income" ~ "Mean income in 1930 (logged)",
+    census_change_series == "mean_wealth" ~ "Mean wealth in 1930",
+    census_change_series == "log_mean_wealth" ~ "Mean wealth in 1930 (logged)",
+  ),
+        value = case_when(
+          str_detect(census_change_series, "Population change") ~ pmin(value, 500),
+          TRUE ~ value
+        ))
+
+df_census_changes %>% write_rds("df_census_changes_and_fin.rds")
+```
 
 
 Trash

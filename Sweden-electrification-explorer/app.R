@@ -17,7 +17,7 @@ birth_place_counts <- read_rds("birth_place_counts.rds")
 birth_place_counts <- birth_place_counts %>%
   rename(parish = scbkod)
 
-df_census_changes <- read_rds("df_census_changes.rds")
+df_census_changes <- read_rds("df_census_changes_and_fin.rds")
 st_map <- read_rds("st_map.rds")
 
 st_map <- st_map %>%
@@ -26,24 +26,7 @@ st_map <- st_map %>%
 
 parish_birth_stats <- read_rds("parish_birth_stats.rds")
 
-df_census_changes <- df_census_changes %>%
-  pivot_longer(-ref_code_char, names_to = "census_change_series") %>%
-  rename(parish = ref_code_char) %>%
-  mutate(census_change_series = case_when(
-    census_change_series == "x1880" ~ "Population in 1880",
-    census_change_series == "x1890" ~ "Population in 1890",
-    census_change_series == "x1900" ~ "Population in 1900",
-    census_change_series == "x1910" ~ "Population in 1910",
-    census_change_series == "x1930" ~ "Population in 1930",
-    census_change_series == "mon_inc_1880_1910" ~ "Population change 1880:1910 (binary)",
-    census_change_series == "mon_inc_1880_1930" ~ "Population change 1880:1930 (binary)",
-    census_change_series == "pct_change_1880_1910" ~ "Population change 1880:1910 (pct)",
-    census_change_series == "pct_change_1880_1930" ~ "Population change 1880:1930 (pct)"
-  ),
-        value = case_when(
-          str_detect(census_change_series, "Population change") ~ pmin(value, 500),
-          TRUE ~ value
-        ))
+
 
 parish_names <- st_map %>%
   select(parish, name) %>%
@@ -158,8 +141,8 @@ server <- function(input, output) {
     leaflet() %>%
       setView(
         lng = 12,
-        lat = 56,
-        zoom = 4
+        lat = 63,
+        zoom = 5
       ) %>%
       addProviderTiles("CartoDB.Positron")
   })
