@@ -872,6 +872,86 @@ df_census_changes <- df_census_changes %>%
 df_census_changes %>% write_rds("df_census_changes_and_fin.rds")
 ```
 
+### Electricity map slider
+
+Whats the plan? We have to create a map with a slider for the different years. Need to combine into one dataframe and have two filters. One for power generation and one for the year.
+
+```{r}
+power_1885 <- read_rds("1885_water_and_heat.rds") %>% mutate(year = 1885,
+                                                             content = "Power generation")
+power_1900 <- read_rds("1900_water_and_heat.rds") %>% mutate(year = 1900,
+                                                             content = "Power generation")
+
+grid_1900 <- read_rds("1900_grid.rds") %>% mutate(year = 1900, content = "Grid")
+grid_1911 <- read_rds("1911_grid.rds") %>% mutate(year = 1911, content = "Grid")
+grid_1926 <- read_rds("1926_grid.rds") %>% mutate(year = 1926, content = "Grid")
+
+elec_map_grid <- grid_1900 %>% 
+  bind_rows(grid_1911) %>% 
+  bind_rows(grid_1926)  %>% 
+  st_transform(crs = 4326)
+
+
+elec_map_power <- power_1885 %>% 
+  bind_rows(power_1900) %>% 
+  st_transform(crs = 4326)
+```
+
+Now draw the map
+
+```{r}
+elec_map_grid %>%
+  ggplot(aes(colour = factor(year))) +
+  geom_sf()
+
+
+elec_map_grid %>%
+  filter(year == 1926) %>%
+  leaflet() %>%
+  setView(
+    lng = 12,
+    lat = 63,
+    zoom = 5
+  ) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolylines()
+
+
+
+elec_map_power_filtered <- elec_map_power %>%
+  filter(year == 1900)
+
+pal <- colorFactor("Set1", elec_map_power_filtered$type)
+
+  
+labels <- sprintf(
+  "<strong>%s</strong><br/>%.0f kW generation capacity",
+  elec_map_power_filtered$type, elec_map_power_filtered$power
+) %>% lapply(htmltools::HTML)
+
+
+leaflet(elec_map_power_filtered) %>%
+  setView(
+    lng = 12,
+    lat = 63,
+    zoom = 5
+  ) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addCircleMarkers(
+    weight = 1,
+    radius = ~ sqrt(power),
+    color = ~ pal(type),
+    popup = labels
+  ) %>%
+  addPolylines(
+    data =
+      elec_map_grid %>%
+        filter(year == 1926)
+  ) %>%
+  addLegend("bottomright", pal = pal, values = ~type, title = "Power source")
+
+```
+
 
 Trash
 

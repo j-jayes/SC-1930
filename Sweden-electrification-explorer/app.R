@@ -9,6 +9,7 @@ library(ggiraph)
 library(bslib)
 library(metathis)
 library(sf)
+library(htmltools)
 
 setwd(here::here("Sweden-electrification-explorer"))
 # df <- read_rds("folk_1930_short.rds")
@@ -32,8 +33,10 @@ parish_names <- st_map %>%
   select(parish, name) %>%
   as_tibble() %>%
   select(-geometry) %>%
-  mutate(name = str_remove(name, "församling"),
-         name = str_squish(name)) %>%
+  mutate(
+    name = str_remove(name, "församling"),
+    name = str_squish(name)
+  ) %>%
   rename(parish_name = name)
 
 
@@ -56,16 +59,22 @@ ui <- fluidPage(
         selected = "Population change 1880:1930 (pct)",
         multiple = FALSE
       ),
-      sliderTextInput("year_input",
-        "Year:",
-        choices = c(1900, 1910, 1925, 1938, 1950, 1960, 1970, 1980, 1990, 2000, 2010, 2015),
-        selected = 1950,
+      sliderTextInput("year_input_grid",
+        "Choose grid year:",
+        choices = c(1900, 1911, 1926),
+        selected = 1900,
         animate = TRUE
+      ),
+      sliderTextInput("year_input_power",
+                      "Choose power generation year:",
+                      choices = c(1885, 1900),
+                      selected = 1885,
+                      animate = TRUE
       )
     ),
-
     mainPanel(
       tabsetPanel(
+        id = "tab_being_displayed", # will set input$tab_being_displayed
         type = "tabs",
         tabPanel(
           "Population",
@@ -75,7 +84,7 @@ ui <- fluidPage(
           "Table",
           # tableOutput("comp_table")
           valueBoxOutput("vbox_1"),
-          # leafletOutput("leaflet_map_births", height = 800)
+          leafletOutput("leaflet_map_elec", height = 800)
         ),
         tabPanel(
           "Formula",
@@ -86,6 +95,7 @@ ui <- fluidPage(
           # uiOutput("formula_inputs"))
         )
       ),
+      selected = "Population"
     )
   )
 )
@@ -94,6 +104,8 @@ ui <- fluidPage(
 # Define server logic required to draw a histogram
 server <- function(input, output) {
 
+  # map number 1
+  ## df
   df_map <- reactive({
     df_census_changes %>%
       filter(
@@ -129,14 +141,14 @@ server <- function(input, output) {
       inner_join(st_map) %>%
       st_sf()
   })
-
+  ## palette
   colorpal <- reactive({
     colorNumeric(
       palette = "Spectral",
       domain = df_map()$value
     )
   })
-
+  ## output
   output$leaflet_map <- renderLeaflet({
     leaflet() %>%
       setView(
@@ -146,7 +158,7 @@ server <- function(input, output) {
       ) %>%
       addProviderTiles("CartoDB.Positron")
   })
-
+  ## observe
   observe({
     pal <- colorpal()
 
@@ -157,13 +169,7 @@ server <- function(input, output) {
         fillOpacity = .3,
         popup = ~html,
         layerId = ~parish
-      )
-  })
-
-  observe({
-    pal <- colorpal()
-
-    leafletProxy("leaflet_map", data = df_map()) %>%
+      ) %>%
       clearControls() %>%
       addLegend(
         position = "bottomright",
@@ -177,6 +183,95 @@ server <- function(input, output) {
       )
   })
 
+  # map number 2
+  ## df grid
+  df_elec_map_grid <- reactive({
+    elec_map_grid %>%
+      filter(year == input$year_input_grid)
+  })
+  df_elec_map_power <- reactive({
+    elec_map_power %>%
+      filter(year == input$year_input_power)
+  })
+  ## palette
+  colorpal_power <- reactive({
+    pal <- colorFactor("Set1", elec_map_power_filtered$type)
+  })
+  ## output
+  output$leaflet_map_elec <- renderLeaflet({
+    leaflet() %>%
+      setView(
+        lng = 12,
+        lat = 63,
+        zoom = 5
+      ) %>%
+      addProviderTiles("CartoDB.Positron")
+  })
+  ## observe for the power
+  observe({
+    req(input$tab_being_displayed == "Table") # Only display if tab is 'Map Tab'
+
+    pal <- colorpal_power()
+
+    labels <- sprintf(
+      "<strong>%s</strong><br/>%.0f kW generation capacity",
+      df_elec_map_power()$type, df_elec_map_power()$power
+    ) %>% lapply(htmltools::HTML)
+
+    leafletProxy("leaflet_map_elec", data = df_elec_map_power()) %>%
+      clearShapes() %>%
+      addPolylines(data = df_elec_map_grid()) %>%
+      clearMarkers() %>%
+      addCircleMarkers(
+        weight = 1,
+        radius = ~ sqrt(power),
+        color = ~ pal(type),
+        popup = labels
+      ) %>%
+      clearControls() %>%
+      addLegend("bottomright", pal = pal, values = ~type, title = "Power source")
+  })
+
+  # ## observe
+  # observe({
+  #   pal <- colorpal_power()
+  #
+  #   labels <- sprintf(
+  #     "<strong>%s</strong><br/>%.0f kW generation capacity",
+  #     df_elec_map_power()$type, df_elec_map_power()$power
+  #   ) %>% lapply(htmltools::HTML)
+  #
+  #   leafletProxy("leaflet_map_elec", data = df_elec_map_power()) %>%
+  #     clearShapes() %>%
+  #     addCircleMarkers(
+  #       weight = 1,
+  #       radius = ~ sqrt(power),
+  #       color = ~ pal(type),
+  #       popup = labels
+  #     ) %>%
+  #     addPolylines(data = df_elec_map_grid()) %>%
+  #     clearControls() %>%
+  #     addLegend("bottomright", pal = pal, values = ~type, title = "Power source")
+  # })
+
+
+
+  # observe({
+  #   pal <- colorpal()
+  #
+  #   leafletProxy("leaflet_map", data = df_map()) %>%
+  #     clearControls() %>%
+  #     addLegend(
+  #       position = "bottomright",
+  #       pal = pal,
+  #       values = ~value,
+  #       title = glue(input$census_change_series_input),
+  #       labFormat = labelFormat(
+  #         # prefix = glue(legend_prefix()),
+  #         # suffix = glue(legend_suffix())
+  #       )
+  #     )
+  # })
 
   # # next map
   # df_map_birthplaces <- reactive({
@@ -254,13 +349,14 @@ server <- function(input, output) {
   # })
 
 
-
-  vb <-  valueBox(
+  vb <- shinydashboard::valueBox(
+    # background = "navy",
     value = "1,345",
     subtitle = "Lines of code written",
     icon = icon("calendar", lib = "font-awesome"),
     width = 4,
-    href = NULL)
+    href = NULL
+  )
 
   output$vbox_1 <- renderValueBox(vb)
 
