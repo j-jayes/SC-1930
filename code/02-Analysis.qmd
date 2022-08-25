@@ -49,9 +49,6 @@ Map:
 #   write_rds("data/st_map.rds")
 
 st_map <- read_rds("data/st_map.rds")
-
-st_map %>% 
-  select(ref_code_char, name, county)
 ```
 
 Census changes:
@@ -230,7 +227,7 @@ plot_gg_map <- function(tbl, ct, var) {
 
   ggmap_obj <- get_map(bbcoords, zoom = zm)
 
-  ggmap_obj %>% write_rds(glue::glue("data/ggmap_objs/county_", ct %>% paste(collapse = "_")))
+  # ggmap_obj %>% write_rds(glue::glue("data/ggmap_objs/county_", ct %>% paste(collapse = "_")))
 
   ggplot_obj <- tbl_trans
 
@@ -738,14 +735,45 @@ hydro_1 %>% bind_rows(hydro_2)
 
 parish_map %>% 
   st_buffer(dist = 5000) %>% 
-  st_join(hydro) %>% 
   ggplot() +
   geom_sf() 
 
+# dist = 400 seems right
 
+sf::sf_use_s2(FALSE)
 
+count_parishes <- function(ds) {
+  sf::sf_use_s2(TRUE)
+
+  parish_map_buffer <- parish_map %>%
+    st_buffer(dist = ds)
+  
+  sf::sf_use_s2(FALSE)
+  joined_parishes <- st_map %>%
+    st_join(parish_map_buffer)
+
+  joined_parishes_filtered <- joined_parishes %>%
+    filter(!is.na(id))
+
+  n_parihes <- joined_parishes_filtered %>%
+    count() %>%
+    pull(n)
+
+  message("The number of parishes is: ", n_parihes)
+
+  joined_parishes_filtered %>%
+    ggplot() +
+    geom_sf(aes(fill = county))
+}
+
+# We want to get to only 192 parishes. Let's decrease the size of the buffer.
+
+count_parishes(400)
+
+# joined_parishes_filtered %>% write_rds("electricity_parishes.rds")
 
 ```
+
 
 
 ## Wealth and gini maps
@@ -891,10 +919,13 @@ elec_map_grid <- grid_1900 %>%
   bind_rows(grid_1926)  %>% 
   st_transform(crs = 4326)
 
+elec_map_grid %>% write_rds("elec_map_grid.rds")
 
 elec_map_power <- power_1885 %>% 
   bind_rows(power_1900) %>% 
   st_transform(crs = 4326)
+
+elec_map_power %>% write_rds("elec_map_power.rds")
 ```
 
 Now draw the map
@@ -950,6 +981,228 @@ leaflet(elec_map_power_filtered) %>%
   ) %>%
   addLegend("bottomright", pal = pal, values = ~type, title = "Power source")
 
+```
+
+
+calculate averages of outcome variables for electricity parishes and others
+
+```{r}
+
+```
+
+
+```{r}
+# just for dev
+df <- read_rds("folk_1930_short.rds")
+
+title_counts <- df %>%
+  filter(yrke != "") %>% 
+  count(scbkod, yrke) 
+
+title_counts <- title_counts %>% 
+  group_by(scbkod) %>% 
+  slice_max(n, n = 10, with_ties = F) %>% 
+  ungroup()
+
+title_counts <- title_counts %>% 
+  group_by(scbkod) %>% 
+  mutate(rank = row_number()) %>% 
+  mutate(yrke = str_c(n, " ", yrke)) %>% 
+  select(-n) %>% 
+  ungroup() %>% 
+  pivot_wider(names_from = rank, values_from = yrke)
+
+title_counts <- title_counts %>% 
+  inner_join(parish_names, by = c("scbkod" = "parish"))
+
+title_counts <- title_counts %>% 
+  relocate(c(parish_name, county_name), .after = scbkod)
+
+title_counts <- title_counts %>%
+  gather(key, value, parish_name:`10`) %>%
+  mutate(
+    key = case_when(
+      key == "parish_name" ~ "Parish Name",
+      key == "county_name" ~ "County Name",
+      TRUE ~ key
+    ),
+    key = paste0("<b>", key, "</b>")
+  ) %>%
+  replace_na(list(vt = "Unknown")) %>%
+  nest(data = c(key, value)) %>%
+  mutate(html = map(data,
+    knitr::kable,
+    format = "html",
+    escape = FALSE,
+    col.names = c("", "")
+  ))
+
+title_counts <- title_counts %>% 
+  inner_join(st_map, by = c("scbkod" = "parish")) %>% 
+  st_as_sf(crs = 4326)
+
+
+
+leaflet(title_counts) %>%
+  setView(
+    lng = 12,
+    lat = 63,
+    zoom = 5
+  ) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolygons(
+    popup = ~html,
+    layerId = ~scbkod
+  )
+
+
+
+# title_counts %>% 
+#   write_rds("title_counts_map.rds")
+
+```
+
+Comparisons
+
+```{r}
+df_census_changes
+
+electricity_parishes <- electricity_parishes %>% 
+  as_tibble() %>% 
+  select(parish) %>% 
+  mutate(type = "Electricity parish")
+
+electricity_parishes <- parish_names %>% 
+  left_join(electricity_parishes) %>% 
+  mutate(type = replace_na(type, "Not electricity parish"))
+
+df_census_changes_new <- df_census_changes %>% 
+  pivot_wider(names_from = census_change_series, values_from = value) %>% 
+  left_join(electricity_parishes)
+
+outcomes_avg <- df_census_changes_new %>% 
+  pivot_longer(`Population in 1880`:`Mean wealth in 1930 (logged)`) %>% 
+  filter(!is.na(value),
+         !is.na(type)) %>% 
+  group_by(name, type) %>% 
+  summarise(mean_value = mean(value)) %>% 
+  ungroup()
+
+# outcomes_avg %>% write_rds("outcomes_avg.rds")
+
+outcomes_avg %>% 
+  filter(name == "Mean income in 1930") %>% 
+  mutate(mean_value = round(mean_value, 2)) %>% 
+  ggplot(aes(type, mean_value, fill = type)) +
+  geom_col(show.legend = F) +
+  # geom_text(aes(label = mean_value),
+  #           vjust = -1) +
+  scale_fill_brewer(palette = "Paired") +
+  facet_wrap(~ name, scales = "free_y") +
+  labs(x = NULL,
+       y = NULL)
+```
+
+
+Differences in ranking of occupations by electricity parish
+
+```{r}
+
+title_counts <- df %>%
+  filter(yrke != "") %>% 
+  count(scbkod, yrke) 
+
+
+type_title_counts <- df %>% 
+  inner_join(electricity_parishes, by = c("scbkod" = "parish")) %>% 
+  filter(yrke != "") %>% 
+  count(yrke, type)
+
+type_title_counts <- type_title_counts %>% 
+  group_by(type) %>% 
+  slice_max(n, n = 20, with_ties = F) %>% 
+  ungroup()
+
+type_title_counts %>% 
+  write_rds("type_title_counts.rds")
+
+type_title_counts %>%
+  mutate(yrke = fct_reorder(yrke, n)) %>%
+  ggplot(aes(n, yrke, fill = type)) +
+  geom_col(show.legend = F) +
+  facet_wrap(~type, scales = "free_x") +
+  labs(x = NULL,
+       y = NULL,
+       title = "Most common job titles by parish type")
+
+```
+
+### Gini and wealth comparison
+
+```{r}
+df_census_changes
+
+epnames <- read_rds("electricity_parishes_names.rds")
+
+df_census_changes <- df_census_changes %>% 
+  inner_join(epnames)
+
+# df_census_changes_names %>% write_rds("df_census_changes_names.rds")
+
+f <- df_census_changes_names %>%
+  filter(str_detect(census_change_series, "gini")) %>%
+  distinct() %>%
+  pivot_wider(
+    names_from = census_change_series,
+    values_from = value
+  ) %>%
+  mutate(tooltip = str_c(
+    parish_name, "\n",
+    county_name, "\nIncome gini = ",
+    `Income gini in 1930`, "\nWealth gini = ",
+    `Wealth gini in 1930`
+  )) %>%
+  ggplot(aes(`Income gini in 1930`, `Wealth gini in 1930`,
+    colour = type, group = type,
+    tooltip = tooltip
+  )) +
+  geom_point_interactive(alpha = .6) +
+  geom_smooth(se = F) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Wealth and income ginis in 1930",
+    colour = NULL
+  ) +
+  theme(legend.position = "bottom")
+
+
+# do agglomoration incraese wealth?
+
+f <- df_census_changes_names %>%
+  filter(census_change_series %in% c("Population in 1930", "Mean income in 1930 (logged)")) %>%
+  distinct() %>%
+  pivot_wider(names_from = census_change_series, values_from = value) %>%
+  mutate(`Mean income in 1930 (logged)` = round(`Mean income in 1930 (logged)`, 2)) %>%
+  mutate(tooltip = str_c(
+    parish_name, "\n",
+    county_name, "\nPop = ",
+    `Population in 1930`, "\nMean income = ",
+    `Mean income in 1930 (logged)`
+  )) %>%
+  ggplot(aes(`Population in 1930`, `Mean income in 1930 (logged)`,
+    colour = type, tooltip = tooltip, group = type
+  )) +
+  geom_point_interactive(alpha = .6) +
+  geom_smooth(se = F) +
+  scale_x_log10() +
+  scale_color_brewer(palette = "Dark2") +
+  theme(legend.position = "bottom") +
+  labs(
+    colour = NULL,
+    title = "Population and income in 1930"
+  )
+
+ggiraph(ggobj = f)
 ```
 
 

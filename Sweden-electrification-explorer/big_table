@@ -1,0 +1,39 @@
+  df_map <- reactive({
+    df_census_changes %>%
+      filter(
+        census_change_series == input$census_change_series_input,
+      ) %>%
+      filter(!is.na(value)) %>%
+      inner_join(df_census_changes %>%
+                   pivot_wider(names_from = census_change_series, values_from = value)) %>%
+      mutate(
+        value_table = str_c(format(round(value, 0), big.mark = " ")),
+        parish_table = parish,
+      ) %>%
+      inner_join(parish_names) %>%
+      relocate(value, .after = parish ) %>%
+      gather(
+        key, vt,
+        census_change_series:parish_name
+        # parish_table, value_table, parish_name
+      ) %>%
+      mutate(
+        # key = case_when(
+        #   key == "parish_table" ~ "Parish Number",
+        #   key == "parish_name" ~ "Parish Name",
+        #   TRUE ~ input$census_change_series_input
+        # ),
+        key = str_to_title(str_replace_all(key, "_", " ")),
+        key = paste0("<b>", key, "</b>")
+      ) %>%
+      replace_na(list(vt = "Unknown")) %>%
+      nest(data = c(key, vt)) %>%
+      mutate(html = map(data,
+        knitr::kable,
+        format = "html",
+        escape = FALSE,
+        col.names = c("", "")
+      )) %>%
+      inner_join(st_map) %>%
+      st_sf()
+  })
