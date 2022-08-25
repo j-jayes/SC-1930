@@ -25,6 +25,8 @@ st_map <- st_map %>%
   rename(parish = ref_code_char) %>%
   st_transform(crs = 4326)
 
+st_map_new <- read_rds("st_map_new.rds")
+
 parish_birth_stats <- read_rds("parish_birth_stats.rds")
 
 elec_map_grid <- read_rds("elec_map_grid.rds")
@@ -256,9 +258,9 @@ server <- function(input, output) {
     leafletProxy("leaflet_map_elec", data = df_elec_map_power()) %>%
       clearShapes() %>%
       addPolygons(
-        data = electricity_parishes,
+        data = st_map_new %>% filter(type == "Electricity parish"),
         color = "#444444", weight = 1, smoothFactor = 1,
-        opacity = 1.0, fillOpacity = 0.5,
+        opacity = 1.0, fillOpacity = 0.5, popup = ~ parish_name
       ) %>%
       addPolylines(data = df_elec_map_grid()) %>%
       clearMarkers() %>%

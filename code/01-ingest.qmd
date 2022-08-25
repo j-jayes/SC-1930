@@ -20,6 +20,8 @@ df <- read.csv(here::here("data", "Folk1930.csv"), sep = "\t")
 
 df <- df %>% as_tibble() %>% 
   janitor::clean_names()
+
+# df %>% head(50) %>% view()
 ```
 
 
@@ -37,6 +39,11 @@ df %>%
 
 ```{r}
 df_census <- read_rds("data/census_counts_by_year.rds")
+
+# doin again
+df_census <- read_rds("data/census_counts_by_year_new.rds")
+
+
 
 df_census <- df_census %>% 
   janitor::clean_names()
@@ -300,6 +307,13 @@ lan_codes <- tibble(
 )
 
 lan_codes %>% write_rds("data/lan_codes.rds")
+
+lan_codes <- lan_codes %>% 
+  mutate(lan_code = as.character(lan_code),
+         lan_code = case_when(
+           nchar(lan_code) == 1 ~ str_c("0", lan_code),
+           TRUE ~ lan_code
+         ))
 
 ```
 

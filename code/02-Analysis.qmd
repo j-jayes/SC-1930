@@ -9,7 +9,7 @@ Need 1910 census ad 1930 census.
 
 ```{r}
 library(tidyverse)
-
+# setwd(here::here())
 df_census <- read_rds("data/population_by_parish_1880_1930")
 
 parish_sample <- df_census %>%
@@ -24,6 +24,11 @@ df_census %>%
   ggplot(aes(name, value, colour = ref_code_char)) +
   geom_line() +
   scale_y_log10()
+
+
+df_census %>% 
+  mutate(flag = str_sub(parish_code, -3, -1)) %>% 
+  count(flag)
 ```
 
 lan codes
@@ -36,17 +41,16 @@ lan_codes <- read_rds("data/lan_codes.rds")
 Map:
 
 ```{r}
-# library(histmaps)
-# data("geom_meta")
-# library(sf)
-# p_map <- get_boundaries("1910", "parish")
-# st_map <- p_map %>% left_join(geom_meta, by = c("geom_id"))
-# st_map <- st_map %>% 
-#   mutate(ref_code_char = str_remove(ref_code.x, "SE/"),
-#          ref_code_char = str_sub(ref_code_char, end = -4))
-
-# st_map %>% 
-#   write_rds("data/st_map.rds")
+library(histmaps)
+data("geom_meta")
+library(sf)
+p_map <- get_boundaries("1910", "parish")
+st_map <- p_map %>% left_join(geom_meta, by = c("geom_id"))
+st_map <- st_map %>%
+  mutate(ref_code_char = str_remove(ref_code.x, "SE/"),
+         ref_code_char = str_sub(ref_code_char, end = -4))
+st_map %>%
+  write_rds("data/st_map.rds")
 
 st_map <- read_rds("data/st_map.rds")
 ```
@@ -897,6 +901,27 @@ df_census_changes <- df_census_changes %>%
           TRUE ~ value
         ))
 
+# calculating pop density
+
+# doing this to calc area
+sf::sf_use_s2(FALSE)
+
+st_map_new_area <- st_map_new %>% 
+  mutate(area = st_area(geometry))
+
+st_map_new_area <- st_map_new_area %>% 
+  mutate(area_km2 = as.numeric(area) / 10e6)
+
+sf::sf_use_s2(TRUE)
+
+df_census_changes_test <- df_census_changes %>% 
+  filter(str_detect(census_change_series, "Population in")) %>% 
+  inner_join(st_map_new_area, by = c("parish" = "parish_code_6")) %>% 
+  mutate(pop_density = value / area_km2)
+
+df_census_changes_test %>% 
+  head(2000) %>% view()
+
 df_census_changes %>% write_rds("df_census_changes_and_fin.rds")
 ```
 
@@ -1065,20 +1090,25 @@ leaflet(title_counts) %>%
 Comparisons
 
 ```{r}
-df_census_changes
+df_census_changes # from app.
 
-electricity_parishes <- electricity_parishes %>% 
-  as_tibble() %>% 
-  select(parish) %>% 
-  mutate(type = "Electricity parish")
+# electricity_parishes <- electricity_parishes %>% 
+#   as_tibble() %>% 
+#   select(parish) %>% 
+#   mutate(type = "Electricity parish")
+# 
+# electricity_parishes <- parish_names %>% 
+#   left_join(electricity_parishes) %>% 
+#   mutate(type = replace_na(type, "Not electricity parish"))
 
-electricity_parishes <- parish_names %>% 
-  left_join(electricity_parishes) %>% 
-  mutate(type = replace_na(type, "Not electricity parish"))
+st_map_new <- read_rds("st_map_new")
+
+st_map_new <- st_map_new %>% 
+  mutate(parish_code = str_sub(parish_code, 1, 6))
 
 df_census_changes_new <- df_census_changes %>% 
   pivot_wider(names_from = census_change_series, values_from = value) %>% 
-  left_join(electricity_parishes)
+  left_join(st_map_new, by = c("parish" = "parish_code"))
 
 outcomes_avg <- df_census_changes_new %>% 
   pivot_longer(`Population in 1880`:`Mean wealth in 1930 (logged)`) %>% 
@@ -1144,8 +1174,9 @@ df_census_changes
 
 epnames <- read_rds("electricity_parishes_names.rds")
 
-df_census_changes <- df_census_changes %>% 
-  inner_join(epnames)
+df_census_changes_names <- df_census_changes %>% 
+  # now changing st map new for new types
+  inner_join(st_map_new, by = c("parish" = "parish_code_6"))
 
 # df_census_changes_names %>% write_rds("df_census_changes_names.rds")
 
@@ -1203,6 +1234,54 @@ f <- df_census_changes_names %>%
   )
 
 ggiraph(ggobj = f)
+```
+
+## Check electricity parish codes
+
+```{r}
+electricity_parishes_mpttp <- read.csv("electricity_parishes_from_mpttp.csv") %>% 
+  as_tibble()
+
+electricity_parishes_mpttp <- electricity_parishes_mpttp %>%
+  mutate(
+    nchar = nchar(parish_code),
+    parish_code = as.character(parish_code),
+    parish_code = case_when(
+      nchar == 8 ~ str_c("0", parish_code),
+      TRUE ~ parish_code
+    )
+  ) %>% 
+  select(-nchar)
+
+st_map <- st_map %>% 
+  mutate(parish_code = str_remove(ref_code.x, "SE/")) %>% 
+  inner_join(electricity_parishes_mpttp)
+
+st_map_new <- st_map %>% 
+  select(parish_code, parish_name = name, type = ever_iline) %>% 
+  mutate(type = ifelse(type == 0, "Not electricity parish", "Electricity parish"))
+
+st_map_new <- st_map_new %>%
+  st_transform(crs = 4326)
+
+st_map_new <- st_map_new %>%
+  mutate(type = case_when(
+    parish_code == "251002000" ~ "Not electricity parish",
+    parish_code == "252371000" ~ "Not electricity parish",
+    parish_code == "258401000" ~ "Not electricity parish",
+    TRUE ~ type
+  ))
+
+
+
+st_map_new <- st_map_new %>%
+  mutate(parish_code_6 = str_sub(parish_code, 1, 6),
+         lan_code = str_sub(parish_code_6, 1, 2)) %>% 
+  inner_join(lan_codes) %>% 
+  rename(county_name = lan)
+
+# st_map_new %>% write_rds("st_map_new.rds")
+
 ```
 
 

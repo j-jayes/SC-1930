@@ -5,10 +5,10 @@ account: jonathan-jayes
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 6842739
-bundleId: 6234950
+bundleId: 6236828
 url: https://jonathan-jayes.shinyapps.io/Sweden-electrification-explorer/
-when: 1661377380.54361
-lastSyncTime: 1661377380.54361
+when: 1661428175.08649
+lastSyncTime: 1661428175.08649
 asMultiple: FALSE
 asStatic: FALSE
 ignoredFiles: 1885_water_and_heat.rds|1900_grid.rds|1900_water_and_heat.rds|1911_grid.rds|1926_grid.rds|big_table|df_census_changes.rds|electricity_parishes_names.rds|folk_1930_short.rds|income_ginis.rds|mpttp_parishes.rds|wealth_and_income.rds|wealth_ginis.rds
