@@ -11,6 +11,7 @@ library(metathis)
 library(sf)
 library(htmltools)
 library(ggiraph)
+library(scales)
 
 # setwd(here::here("Sweden-electrification-explorer"))
 birth_place_counts <- read_rds("birth_place_counts.rds")
@@ -39,6 +40,11 @@ outcomes_avg <- read_rds("outcomes_avg.rds")
 
 type_title_counts <- read_rds("type_title_counts.rds")
 df_census_changes_names <- read_rds("df_census_changes_names.rds")
+
+# df_census_changes_names %>%
+#   select(parish, parish_code, parish_name, county_name, type) %>%
+#   distinct() %>%
+#   write_rds("electricity_parishes_2484.rds")
 
 
 # thematic_shiny(font = "auto")
@@ -73,33 +79,35 @@ ui <- fluidPage(
         ),
         mainPanel(
           leafletOutput("leaflet_map_elec", height = 800),
-          p("Source:",  em("The Economic Geography of Electricity: An Outline"),  "Hjulström, Enequist, Lagerstedt (1942)"),
-          a(href="https://books.google.se/books/about/The_Economic_Geography_of_Electricity.html?id=stP3xgEACAAJ&redir_esc=y", "Link"),
+          p("Source:", em("The Economic Geography of Electricity: An Outline"), "Hjulström, Enequist, Lagerstedt (1942)"),
+          a(href = "https://books.google.se/books/about/The_Economic_Geography_of_Electricity.html?id=stP3xgEACAAJ&redir_esc=y", "Link"),
           p("Source: Junkka, Johan.", em("histmaps data package")),
-          a(href="https://github.com/junkka/histmaps/blob/master/LICENSE", "Link to github")
+          a(href = "https://github.com/junkka/histmaps/blob/master/LICENSE", "Link to github")
         )
-      )),
+      )
+    ),
     tabPanel(
       "Outcomes",
       sidebarLayout(
         sidebarPanel(
           width = 3,
           selectizeInput("census_change_series_input",
-                         "Series:",
-                         choices = unique(df_census_changes$census_change_series),
-                         selected = "Population change 1880:1930 (pct)",
-                         multiple = FALSE
+            "Series:",
+            choices = unique(df_census_changes$census_change_series),
+            selected = "Population change 1880:1930 (pct)",
+            multiple = FALSE
           ),
           ggiraphOutput("comparison_col")
         ),
         mainPanel(
           leafletOutput("leaflet_map", height = 800),
           p("Source: ", em("Minnesota Population Center. Integrated Public Use Microdata Series, International: Version 7.3 [dataset]. Minneapolis, MN: IPUMS, 2020.")),
-          a(href="https://doi.org/10.18128/D020.V7.3", "Link"),
+          a(href = "https://doi.org/10.18128/D020.V7.3", "Link"),
           p("Source: ", em("Riksarkivet. 1930 Census")),
           p("Source: Junkka, Johan.", em("histmaps data package")),
-          a(href="https://github.com/junkka/histmaps/blob/master/LICENSE", "Link to github")
-        ))
+          a(href = "https://github.com/junkka/histmaps/blob/master/LICENSE", "Link to github")
+        )
+      )
     ),
     tabPanel(
       "Titles",
@@ -114,27 +122,46 @@ ui <- fluidPage(
           leafletOutput("leaflet_map_titles", height = 800),
           p("Source: ", em("Riksarkivet. 1930 Census")),
           p("Source: Junkka, Johan.", em("histmaps data package")),
-          a(href="https://github.com/junkka/histmaps/blob/master/LICENSE", "Link to github")
-        ))
+          a(href = "https://github.com/junkka/histmaps/blob/master/LICENSE", "Link to github")
+        )
+      )
     ),
     tabPanel(
       "Descriptives",
       fluidRow(
+        column(
+          5,
+          h4("Wealth and income ginis in 1930"),
+          # h6("By parish and parish type"),
+          ggiraphOutput("gini_scatter")
+        ),
         column(5,
-               h4("Wealth and income ginis in 1930"),
-               h6("By parish and parish type"),
-               ggiraphOutput("gini_scatter")),
-        column(5, offset = 1,
-               h4("Population and mean income in 1930"),
-               h6("By parish and parish type"),
-               ggiraphOutput("agglomorations_scatter"))
-      )
+          offset = 1,
+          h4("Population and mean income in 1930"),
+          # h6("By parish and parish type"),
+          ggiraphOutput("agglomorations_scatter")
+        )
       ),
+      fluidRow(
+        column(
+          5,
+          h4("Wealth and income in 1930"),
+          # h6("By parish and parish type"),
+          ggiraphOutput("wealth_income_scatter")
+        ),
+        column(5,
+          offset = 1,
+          h4("Diversity in workforce"),
+          ggiraphOutput("hh_index")
+        )
+      )
+    ),
     tabPanel(
       "What's next?",
       h4("Wealth and income difference by origin in electricity parishes"),
       h4("Migration maps"),
-      h4("Digitize 1925 power stations")),
+      h4("Digitize 1925 power stations")
+    ),
     selected = "Electricity"
   )
 
@@ -186,6 +213,7 @@ server <- function(input, output) {
   colorpal <- reactive({
     colorNumeric(
       palette = "Spectral",
+      reverse = T,
       domain = df_map()$value
     )
   })
@@ -395,6 +423,68 @@ server <- function(input, output) {
   ggiraph(ggobj = f, width_svg = 6, height_svg = 6)
 
   })
+
+  output$wealth_income_scatter <- renderggiraph({
+
+    f <- df_census_changes_names %>%
+      filter(census_change_series %in% c("Mean wealth in 1930 (logged)", "Mean income in 1930 (logged)")) %>%
+      distinct() %>%
+      pivot_wider(names_from = census_change_series, values_from = value) %>%
+      mutate(`Mean income in 1930 (logged)` = round(`Mean income in 1930 (logged)`, 2),
+             `Mean wealth in 1930 (logged)` = round(`Mean wealth in 1930 (logged)`, 2)) %>%
+      mutate(tooltip = str_c(
+        parish_name, "\n",
+        county_name, "\nMean wealth = ",
+        `Mean wealth in 1930 (logged)`, "\nMean income = ",
+        `Mean income in 1930 (logged)`
+      )) %>%
+      ggplot(aes(`Mean wealth in 1930 (logged)`, `Mean income in 1930 (logged)`,
+                 colour = type, tooltip = tooltip, group = type
+      )) +
+      geom_point_interactive(alpha = .6) +
+      geom_smooth(se = F) +
+      scale_x_log10() +
+      scale_color_brewer(palette = "Dark2") +
+      theme(legend.position = "bottom") +
+      labs(
+        colour = NULL,
+      )
+
+    ggiraph(ggobj = f, width_svg = 6, height_svg = 6)
+
+  })
+
+  output$hh_index <- renderggiraph({
+
+    f <- hh_index %>%
+      mutate(
+        hh_index = round(hh_index, 0),
+        tooltip = str_c(
+          "Number of occupations: ",
+          n_occs,
+          "\nHH index: ",
+          hh_index,
+          "\nType: ",
+          type
+        )
+      ) %>%
+      ggplot(aes(n_occs, hh_index, colour = type, group = type)) +
+      geom_point_interactive(aes(tooltip = tooltip)) +
+      geom_line() +
+      scale_y_log10(labels = scales::number_format()) +
+      scale_x_log10(labels = scales::number_format()) +
+      scale_color_brewer(palette = "Dark2") +
+      theme(legend.position = "bottom") +
+      labs(
+        x = "Number of occpations in calculation",
+        y = "HH index",
+        colour = NULL
+      )
+
+    ggiraph(ggobj = f, width_svg = 6, height_svg = 6)
+
+  })
+
 
 
 }

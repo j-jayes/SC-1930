@@ -909,18 +909,69 @@ sf::sf_use_s2(FALSE)
 st_map_new_area <- st_map_new %>% 
   mutate(area = st_area(geometry))
 
+# sense check
+# st_map_new_area %>% 
+#   mutate(area = as.numeric(area)) %>% 
+#   ggplot() +
+#   geom_sf(aes(fill = area)) +
+#   scale_fill_gradient2()
+
 st_map_new_area <- st_map_new_area %>% 
-  mutate(area_km2 = as.numeric(area) / 10e6)
+  mutate(area_km2 = as.numeric(area) / 10e6) %>% 
+  as_tibble() %>% 
+  select(parish_code_6, area, type) 
 
 sf::sf_use_s2(TRUE)
+
+
 
 df_census_changes_test <- df_census_changes %>% 
   filter(str_detect(census_change_series, "Population in")) %>% 
   inner_join(st_map_new_area, by = c("parish" = "parish_code_6")) %>% 
-  mutate(pop_density = value / area_km2)
+  mutate(pop_density = value / area)
 
-df_census_changes_test %>% 
-  head(2000) %>% view()
+df_census_changes_test <- df_census_changes_test %>% 
+  mutate(census_change_series = str_replace_all(census_change_series, "Population", "Population density"),
+         value = pop_density) %>% 
+  select(parish, census_change_series, value)
+
+
+df_census_changes_test <- df_census_changes_test %>% 
+  mutate(value = as.numeric(value)) %>% 
+  bind_rows(df_census_changes)
+
+electricity_parishes_2484 <- read_rds("electricity_parishes_2484.rds")
+
+df_census_changes_test <- df_census_changes_test %>% 
+  inner_join(electricity_parishes_2484)
+
+  f <- df_census_changes_test %>%
+    filter(census_change_series %in% c("Mean income in 1930 (logged)", "Population density in 1930")) %>%
+    distinct() %>%
+    # this is a silly work around
+    add_count(parish) %>% 
+    filter(n == 2) %>% 
+    pivot_wider(names_from = census_change_series, values_from = value) %>% 
+    mutate(`Mean income in 1930 (logged)` = round(`Mean income in 1930 (logged)`, 2)) %>%
+    # mutate(tooltip = str_c(
+    #   parish_name, "\n",
+    #   county_name, "\nPop = ",
+    #   `Population in 1930`, "\nMean income = ",
+    #   `Mean income in 1930 (logged)`
+    # )) %>%
+    ggplot(aes(`Population density in 1930`, `Mean income in 1930 (logged)`,
+               colour = type, group = type
+    )) +
+    geom_point_interactive(alpha = .6) +
+    geom_smooth(se = F) +
+    scale_x_log10() +
+    scale_color_brewer(palette = "Dark2") +
+    theme(legend.position = "bottom") +
+    labs(
+      colour = NULL,
+    )
+
+  ggiraph(ggobj = f, width_svg = 6, height_svg = 6)
 
 df_census_changes %>% write_rds("df_census_changes_and_fin.rds")
 ```
@@ -1281,6 +1332,107 @@ st_map_new <- st_map_new %>%
   rename(county_name = lan)
 
 # st_map_new %>% write_rds("st_map_new.rds")
+
+```
+
+
+## Herfindahl index for occupations
+
+```{r}
+df <- read_rds(here::here("data/folk_1930_short.rds"))
+
+electricity_parishes_mpttp <- st_map_new
+
+
+
+type_title_counts <- df %>% 
+  inner_join(electricity_parishes_mpttp, by = c("scbkod" = "parish_code_6")) %>% 
+  mutate(yrke = str_to_lower(yrke),
+         yrke = str_squish(yrke)) %>% 
+  filter(yrke != "") %>% 
+  count(yrke, type)
+
+type_title_counts %>% 
+  ggplot(aes(n, fill = type)) +
+  geom_histogram() +
+  scale_x_log10() +
+  facet_wrap(~ type, nrow = 2, scales = "free_y")
+
+type_title_counts %>%
+  group_by(type) %>%
+  slice_max(n, n = 50) %>%
+  ungroup() %>%
+  mutate(yrke = fct_reorder(yrke, n)) %>%
+  ggplot(aes(n, yrke, fill = type)) +
+  geom_col(show.legend = F) +
+  facet_wrap(~type, scales = "free_x") +
+  labs(
+    x = NULL,
+    y = NULL,
+    title = "Most common job titles by parish type"
+  )
+
+```
+
+Level of concentration
+
+```{r}
+get_hh_index <- function(n_yrke) {
+  type_title_counts %>%
+    group_by(type) %>%
+    slice_max(n, n = n_yrke) %>%
+    mutate(
+      total = sum(n),
+      share = n / total * 100,
+      share_2 = share^2
+    ) %>%
+    summarise(hh_index = sum(share_2)) %>% 
+    mutate(n_occs = n_yrke)
+}
+
+
+get_hh_index(10)
+
+list_for_hh_index <- rep(1:1000, by = 1) %>% as_tibble() %>% 
+  rename(input = value)
+
+
+list_for_hh_index <- list_for_hh_index %>% 
+  # head(5) %>% 
+  mutate(hh_index = map(input, possibly(get_hh_index, NA)))
+
+
+hh_index <- list_for_hh_index %>%
+  unnest(hh_index)
+
+hh_index %>% write_rds("hh_index.rds")
+
+f <- hh_index %>%
+  mutate(
+    hh_index = round(hh_index, 0),
+    tooltip = str_c(
+      "Number of occupations: ",
+      n_occs,
+      "\nHH index: ",
+      hh_index,
+      "\nType: ",
+      type
+    )
+  ) %>%
+  ggplot(aes(n_occs, hh_index, colour = type, group = type)) +
+  geom_point_interactive(aes(tooltip = tooltip)) +
+  geom_line() +
+  scale_y_log10(labels = scales::number_format()) +
+  scale_x_log10(labels = scales::number_format()) +
+  scale_color_brewer(palette = "Dark2") +
+  theme(legend.position = "bottom") +
+  labs(
+    x = "Number of occpations in calculation",
+    y = "HH index",
+    colour = NULL
+  )
+
+ggiraph(ggobj = f)
 
 ```
 
