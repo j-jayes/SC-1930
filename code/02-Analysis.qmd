@@ -1343,8 +1343,6 @@ df <- read_rds(here::here("data/folk_1930_short.rds"))
 
 electricity_parishes_mpttp <- st_map_new
 
-
-
 type_title_counts <- df %>% 
   inner_join(electricity_parishes_mpttp, by = c("scbkod" = "parish_code_6")) %>% 
   mutate(yrke = str_to_lower(yrke),
@@ -1393,7 +1391,7 @@ get_hh_index <- function(n_yrke) {
 
 get_hh_index(10)
 
-list_for_hh_index <- rep(1:1000, by = 1) %>% as_tibble() %>% 
+list_for_hh_index <- rep(1:250, by = 1) %>% as_tibble() %>% 
   rename(input = value)
 
 

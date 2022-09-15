@@ -37,3 +37,36 @@
       inner_join(st_map) %>%
       st_sf()
   })
+
+
+  output$gini_scatter <- renderggiraph({
+
+  f <- df_census_changes_names %>%
+    filter(str_detect(census_change_series, "gini")) %>%
+    mutate(value = round(value, 0)) %>%
+    distinct() %>%
+    pivot_wider(
+      names_from = census_change_series,
+      values_from = value
+    ) %>%
+    mutate(tooltip = str_c(
+      parish_name, "\n",
+      county_name, "\nIncome gini = ",
+      `Income gini in 1930`, "\nWealth gini = ",
+      `Wealth gini in 1930`
+    )) %>%
+    ggplot(aes(`Income gini in 1930`, `Wealth gini in 1930`,
+               colour = type, group = type,
+               tooltip = tooltip
+    )) +
+    geom_point_interactive(alpha = .6) +
+    geom_smooth(se = F) +
+    scale_color_brewer(palette = "Dark2") +
+    labs(
+      colour = NULL
+    ) +
+    theme(legend.position = "bottom")
+
+  ggiraph(ggobj = f, width_svg = 6, height_svg = 6)
+
+  })

@@ -40,6 +40,7 @@ outcomes_avg <- read_rds("outcomes_avg.rds")
 
 type_title_counts <- read_rds("type_title_counts.rds")
 df_census_changes_names <- read_rds("df_census_changes_names.rds")
+hh_index <- read_rds("hh_index.rds")
 
 # df_census_changes_names %>%
 #   select(parish, parish_code, parish_name, county_name, type) %>%
@@ -64,6 +65,7 @@ ui <- fluidPage(
       sidebarLayout(
         sidebarPanel(
           width = 3,
+          imageOutput("qr"),
           sliderTextInput("year_input_grid",
             "Choose grid year:",
             choices = c(1900, 1911, 1926),
@@ -131,9 +133,9 @@ ui <- fluidPage(
       fluidRow(
         column(
           5,
-          h4("Wealth and income ginis in 1930"),
+          h4("Population growth and mean income in 1930"),
           # h6("By parish and parish type"),
-          ggiraphOutput("gini_scatter")
+          ggiraphOutput("income_pop_growth_scatter")
         ),
         column(5,
           offset = 1,
@@ -346,7 +348,6 @@ server <- function(input, output) {
     ggiraph(ggobj = f, height_svg = 8, width_svg = 6)
   })
 
-
   output$comparison_title <- renderggiraph({
 
     f <-   type_title_counts %>%
@@ -361,39 +362,6 @@ server <- function(input, output) {
 
     ggiraph(ggobj = f, height_svg = 8)
   })
-
-  output$gini_scatter <- renderggiraph({
-
-  f <- df_census_changes_names %>%
-    filter(str_detect(census_change_series, "gini")) %>%
-    mutate(value = round(value, 0)) %>%
-    distinct() %>%
-    pivot_wider(
-      names_from = census_change_series,
-      values_from = value
-    ) %>%
-    mutate(tooltip = str_c(
-      parish_name, "\n",
-      county_name, "\nIncome gini = ",
-      `Income gini in 1930`, "\nWealth gini = ",
-      `Wealth gini in 1930`
-    )) %>%
-    ggplot(aes(`Income gini in 1930`, `Wealth gini in 1930`,
-               colour = type, group = type,
-               tooltip = tooltip
-    )) +
-    geom_point_interactive(alpha = .6) +
-    geom_smooth(se = F) +
-    scale_color_brewer(palette = "Dark2") +
-    labs(
-      colour = NULL
-    ) +
-    theme(legend.position = "bottom")
-
-  ggiraph(ggobj = f, width_svg = 6, height_svg = 6)
-
-  })
-
 
   output$agglomorations_scatter <- renderggiraph({
 
@@ -454,6 +422,38 @@ server <- function(input, output) {
 
   })
 
+  output$income_pop_growth_scatter <- renderggiraph({
+
+    f <- df_census_changes_names %>%
+      filter(census_change_series %in% c("Population change 1880:1930 (pct)", "Mean income in 1930 (logged)")) %>%
+      distinct() %>%
+      pivot_wider(names_from = census_change_series, values_from = value) %>%
+      mutate(`Mean income in 1930 (logged)` = round(`Mean income in 1930 (logged)`, 2),
+             `Population change 1880:1930 (pct)` = round(`Population change 1880:1930 (pct)`, 2)
+             ) %>%
+      mutate(tooltip = str_c(
+        parish_name, "\n",
+        county_name, "\nPop growth = ",
+        `Population change 1880:1930 (pct)`, "\nMean income = ",
+        `Mean income in 1930 (logged)`
+      )) %>%
+      ggplot(aes(`Population change 1880:1930 (pct)`, `Mean income in 1930 (logged)`,
+                 colour = type, tooltip = tooltip, group = type
+      )) +
+      geom_vline(xintercept = 0, lty = 2) +
+      geom_point_interactive(alpha = .3) +
+      geom_smooth(se = F) +
+      # scale_x_log10() +
+      scale_color_brewer(palette = "Dark2") +
+      theme(legend.position = "bottom") +
+      labs(
+        colour = NULL,
+      )
+
+    ggiraph(ggobj = f, width_svg = 6, height_svg = 6)
+
+  })
+
   output$hh_index <- renderggiraph({
 
     f <- hh_index %>%
@@ -485,7 +485,13 @@ server <- function(input, output) {
 
   })
 
-
+  output$qr <- renderImage({
+    list(
+      src = "qr_shiny.png",
+      width = "100%",
+      height = "400px"
+    )
+  }, deleteFile = FALSE)
 
 }
 

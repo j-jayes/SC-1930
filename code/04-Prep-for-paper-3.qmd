@@ -1,0 +1,217 @@
+---
+title: "04-Prep-for-paper-3"
+format: html
+---
+
+## Purpose
+
+This is a data cleaning script to prepare the 1930 census for regressions on mobility.
+
+### Questions I want to ask Jakob.
+
+Would you prefer I make a codebook that comes along with the dataset? Or just use the variable names that came with it?
+
+```{r}
+library(tidyverse)
+theme_set(theme_light())
+```
+
+```{r}
+df <- read_rds(here::here("data", "folk_1930_short.rds"))
+```
+
+```{r}
+eps <- read_rds("Sweden-electrification-explorer/electricity_parishes_names.rds")
+
+df <- df %>% 
+  inner_join(eps, by = c("scbkod" = "parish"))
+
+df %>% count(type)
+```
+
+
+Controls
+What do we want to use as controls?
+
+Age
+Parish FE?
+HISCO code?
+Skill groupings
+Questions to ask next:
+
+What happens to them if they do move?
+Do they get higher incomes than their parish of birth on average? Show some density distribution.
+TODO for preparing the dataset for analysis:
+
+- Check 1930 census overlap with electricity parishes. Two ways. Codes and Geography.
+- Binary variables for: Age of some threshold for adulthood in 1930. Parish of birth same as parish of current residence.
+- Some descriptive statistics of these variables, by electricity parish and by county.
+- 1930 census contains occupational strings but not HISCO codes. Prior censuses have occupational strings and HISCO codes.
+
+
+### Creating birth year and age variables
+
+```{r}
+df <- df %>% 
+  mutate(yob = parse_number(fodar),
+         age = 1930 - yob,
+         adult_1930 = case_when(
+           # turns 18 in 1930
+           yob <= 1912 ~ "Adult",
+           TRUE ~ "Youth"
+         ),
+         adult_1930 = factor(adult_1930))
+```
+
+
+```{r}
+df %>%
+  group_by(type) %>% 
+  slice_sample(n = 5000) %>% 
+  ungroup() %>% 
+  ggplot(aes(age, log(inkomst))) +
+  geom_jitter(aes(colour = adult_1930), alpha = .5, height = 1) +
+  geom_smooth() +
+  facet_wrap(~ type) +
+  scale_color_brewer(palette = "Paired") +
+  labs(
+    x = "Age in years",
+    y = "Log income",
+    colour = "Colour 1930"
+  )
+```
+
+### Creating migrant variable
+
+
+```{r}
+df <- df %>%
+  mutate(
+    fscbkod = str_squish(fscbkod),
+    migrant = case_when(
+      scbkod != fscbkod ~ "Mover",
+      TRUE ~ "Stayer"
+    )
+  )
+```
+
+### Mover and stayer by age
+
+```{r}
+df %>%
+  mutate(age_groups = case_when(
+    between(age, 0, 18) ~ "0-18 years",
+    between(age, 19, 30) ~ "19-30 years",
+    between(age, 31, 50) ~ "31-50 years",
+    between(age, 51, 70) ~ "51-70 years",
+    TRUE ~ "71 and over"
+  )) %>%
+  count(age_groups, migrant) %>%
+  ggplot(aes(age_groups, n, fill = migrant)) +
+  geom_col(position = "fill") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_fill_brewer(palette = "Paired") +
+  labs(
+    x = "Age group",
+    y = "Share of those moving out of parish",
+    fill = NULL,
+    title = "Share of population living in parish of birth"
+  )
+
+```
+
+### Mover and stayer by age and type of parish
+
+```{r}
+df %>%
+  mutate(age_groups = case_when(
+    between(age, 0, 18) ~ "0-18 years",
+    between(age, 19, 30) ~ "19-30 years",
+    between(age, 31, 50) ~ "31-50 years",
+    between(age, 51, 70) ~ "51-70 years",
+    TRUE ~ "71 and over"
+  )) %>%
+  count(age_groups, migrant, type) %>%
+  group_by(age_groups, type) %>%
+  mutate(
+    pct_share = round((n / sum(n) * 100)),
+    pct_share_y = pct_share / 100
+  ) %>%
+  ungroup() %>%
+  mutate(pct_share_lab = case_when(
+    migrant == "Stayer" ~ as.character(pct_share),
+    TRUE ~ ""
+  )) %>%
+  ggplot(aes(age_groups, n, fill = migrant)) +
+  geom_col(position = "fill") +
+  geom_text(aes(label = pct_share_lab, x = age_groups, y = pct_share_y), vjust = 1.1) +
+  facet_wrap(~type) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_fill_brewer(palette = "Paired") +
+  labs(
+    x = "Age group",
+    y = "Share of those moving out of parish",
+    fill = NULL,
+    title = "Share of population living in parish of birth"
+  )
+```
+
+
+```{r}
+df %>%
+  mutate(
+    age_groups = case_when(
+      between(age, 0, 18) ~ "0-18 years",
+      between(age, 19, 30) ~ "19-30 years",
+      between(age, 31, 50) ~ "31-50 years",
+      between(age, 51, 70) ~ "51-70 years",
+      TRUE ~ "71 and over"
+    ),
+    kon = str_to_title(kon)
+  ) %>%
+  filter(kon != "O") %>%
+  mutate(kon = case_when(
+    kon == "M" ~ "Man",
+    TRUE ~ "Woman"
+  )) %>%
+  count(age_groups, migrant, kon) %>%
+  group_by(age_groups, kon) %>%
+  mutate(
+    pct_share = round((n / sum(n) * 100)),
+    pct_share_y = pct_share / 100
+  ) %>%
+  ungroup() %>%
+  mutate(pct_share_lab = case_when(
+    migrant == "Stayer" ~ as.character(pct_share),
+    TRUE ~ ""
+  )) %>% 
+  ggplot(aes(age_groups, pct_share, fill = migrant)) +
+  geom_col(position = "fill") +
+  geom_text(aes(label = pct_share_lab, x = age_groups, y = pct_share_y), vjust = 1.1) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_fill_brewer(palette = "Dark2") +
+  facet_wrap(~kon) +
+  labs(
+    x = "Age group",
+    y = "Share of those moving out of parish",
+    fill = NULL,
+    title = "Share of population living in parish of birth"
+  )
+```
+
+
+
+### Chart I want to draw
+
+Can I calculate distance between each parish centrepoint? Then I want to make this matrix, and then do a lookup for each person that has migrated.
+
+This requires that I match the scb codes to the birthplaces. 
+
+```{r}
+map <- read_rds(here::here("data", "st_map.rds"))
+
+map %>% 
+  arrange(ref_code_char)
+```
+
+
