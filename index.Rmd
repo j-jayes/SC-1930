@@ -1,0 +1,39 @@
+---
+title: "1930 Census Codebook"
+author: "JJayes"
+date: "2022-09-28"
+output: html_document
+---
+
+## Purpose
+
+The codebook presented here contains variables for the 1930 census.
+
+The descriptions are taken from three sources.
+
+- The 1900 and 1910 census, where the source is listed as "Swepop codebook"
+- The documentation that came with the 1930 census, translated to english and listed as "1930 census"
+- Descriptions I wrote to explain the derived variables, listed as "Generated"
+
+You can use the search box in the table to get to the variable quickly.
+
+<br>
+
+## Codebook
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(DT)
+```
+
+
+```{r}
+codebook <- read_rds("data/codebook_1930.rds")
+
+DT::datatable(codebook,
+  rownames = F,
+  colnames = c("Variable", "Data type", "Description", "Source"))
+```
+

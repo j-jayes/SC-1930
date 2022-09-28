@@ -28,9 +28,6 @@ df <- df %>% as_tibble() %>%
 ```{r}
 codebook <- read_rds("data/codebook_1930.rds")
 
-codebook %>% 
-  bind_rows(c(""))
-
 
 df_augmented <- df %>%
   mutate(
@@ -215,7 +212,7 @@ treat_group_250_augmented <- parishes_1930 %>%
   left_join(treat_group_250, by = c("scbkod" = "parish_code"))
 ```
 
-Now ready to save
+Now ready to save.
 
 ```{r}
 treat_group_100_augmented <- df %>% 
@@ -234,5 +231,88 @@ treat_group_100_150_250_augmented <- treat_group_100_150_augmented %>%
 # treat_group_100_150_250_augmented %>% write_rds("data/augmented/treat_groups_100_150_250.rds")
 ```
 
+### Now joining together the other variables
+
+```{r}
+df
+
+
+df_augmented <- read_rds("data/augmented/age.rds")
+
+df <- df %>%
+  left_join(df_augmented)
+
+df_augmented <- read_rds("data/augmented/lives_in_parish_of_birth.rds")
+
+df <- df %>%
+  left_join(df_augmented)
+
+df_augmented <- read_rds("data/augmented/electricity_parish_classifications.rds")
+
+df <- df %>%
+  left_join(df_augmented)
+
+df_augmented <- read_rds("data/augmented/treat_groups_100_150_250.rds") %>% 
+  select(-scbkod)
+
+df <- df %>%
+  left_join(df_augmented)
+
+df_augmented <- read_rds("data/augmented/hisco_5.rds")
+
+df <- df %>%
+  left_join(df_augmented)
+
+df_augmented <- read_rds("data/augmented/distance_from_birth_parish_to_current_parish.rds")
+
+df_augmented <- df_augmented %>% 
+  arrange(id, desc(dist_bp_to_cp_km)) %>% 
+  distinct(id, .keep_all = T)
+
+df <- df %>%
+  left_join(df_augmented)
+
+
+df_augmented <- read_rds("data/augmented/distance_from_previous_parish_to_current_parish.rds")
+
+df_augmented <- df_augmented %>% 
+  arrange(id, desc(dist_pp_to_cp_km)) %>% 
+  distinct(id, .keep_all = T)
+
+df <- df %>%
+  left_join(df_augmented)
+```
+
+Write out
+
+```{r}
+library(haven)
+df %>% 
+  write_dta("data/stata/folk_1930_augmented.dta", version = 15)
+
+df %>% writecsv
+  
+```
+
+
+
+### Population for the other censuses
+
+```{r}
+df_pop <- read_rds("data/Population_by_parish_by_year.rds")
+treat_group_100_150_250_augmented <- read_rds("data/augmented/treat_groups_100_150_250.rds")
+
+df_pop %>% 
+  janitor::clean_names() %>% 
+  mutate(parse = parse_number(as.character(parse))) %>% 
+  mutate(parish_code = as.numeric(str_remove(parse, "\\d\\d\\d$"))) %>% 
+  group_by(year, parish_code) %>% 
+  mutate(total_pop = sum(n)) %>% 
+  ungroup() %>% 
+  select(year, parish_code, total_pop) %>% 
+  distinct() %>% 
+  pivot_wider(names_from = year, names_prefix = "population_parish_", values_from = total_pop)
+
+```
 
 

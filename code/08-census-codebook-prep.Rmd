@@ -1,22 +1,22 @@
 ---
-title: "census-codebook"
+title: "1930 Census Codebook"
 author: "JJayes"
 date: "2022-09-22"
 output: html_document
 ---
 
-## Purpose - making a codebook of the 1930 census.
+## Purpose
+
+Making a codebook of the 1930 census and explaining the new variables.
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
 ```
 
 
 ```{r}
-df <- read.csv(here::here("data", "Folk1930.csv"), sep = "\t")
-
-df <- df %>% as_tibble() %>% 
-  janitor::clean_names()
+df <- read_rds("data/augmented/df_1930_augmented.rds")
 
 colnames_1930 <- colnames(df) %>%
   as_tibble() %>%
@@ -34,26 +34,32 @@ codebook <- codebook %>%
 # codebook %>% write_rds("data/codebook_1930.rds")
 ```
 
-Find new columns
 
 ```{r}
-new_cols <- colnames_1930 %>% 
-  anti_join(codebook)
+codebook %>% 
+  DT::datatable(rownames = F,
+                colnames = c("Variable", "Data type", "Description", "Source"))
 ```
+
+
+Create summary of each var
+
+By numeric or factor. 
+
+If numeric show five number summary. 
+
+If factor, count factors and show top 3
 
 ```{r}
-# new_cols %>% 
-#   mutate(description = c(
-#     "Date pdated",
-#     "Household type",
-#     "?",
-#     "?",
-#     ""
-#   ))
-```
+df %>% 
+  select(where(is.numeric)) %>% 
+  summarise()
 
-```{r}
+df %>% 
+  select(where(is.character)) %>% 
+  summarise(n_distinct = n_distinct(arkbild))
 
 ```
+
 
 
