@@ -24,9 +24,51 @@ df <- read_rds(here::here("data", "folk_1930_short.rds"))
 eps <- read_rds("Sweden-electrification-explorer/electricity_parishes_names.rds")
 
 df <- df %>% 
-  inner_join(eps, by = c("scbkod" = "parish"))
+  inner_join(eps, by = c("scbkod" = "parish")) %>% 
+  rename(type_living_1930 = type)
 
-df %>% count(type)
+df <- df %>% 
+  inner_join(eps, by = c("fscbkod" = "parish")) %>% 
+  rename(type_born = type)
+
+df %>%
+  count(
+    type_born,
+    type_living_1930
+  ) %>%
+  ggplot(aes(type_born, type_living_1930)) +
+  geom_tile(aes(fill = n)) +
+  geom_label(aes(label = n)) +
+  scale_fill_viridis_c()
+```
+
+
+Now I need to make a matrix of our four types:
+
+Ultimately there are how many groups of people?
+
+Treatment means being born into an electricity parish and being an adult in 1930?
+Migrant means switching parish type?? Or does it mean just not living in parish of birth?
+If it means just not living in parish of birth then there are a lot more cells in the matrix...
+
+There are the migrants who leave the electricity parishes.
+There are the migrants who move to electricity parishes.
+There are those who remain in an electricity parish.
+There are those who remain in a non-electricity parish.
+
+Q: Is someone a migrant if they move from electricity-parish to another electricity parish??
+
+```{r}
+df <- df %>%
+  mutate(group = case_when(
+    type_born == "Electricity parish" & type_living_1930 == "Electricity parish" ~ "Treated & lives in Electricity parish",
+    type_born == "Electricity parish" & type_living_1930 == "Not electricity parish" ~ "Treated migrant",
+    type_born == "Not electricity parish" & type_living_1930 == "Not electricity parish" ~ "Untreated non-migrant",
+    type_born == "Not electricity parish" & type_living_1930 == "Electricity parish" ~ "Untreated migrant",
+    TRUE ~ "Errors"
+  ))
+
+
 ```
 
 
@@ -52,48 +94,228 @@ TODO for preparing the dataset for analysis:
 ### Creating birth year and age variables
 
 ```{r}
-df <- df %>% 
-  mutate(yob = parse_number(fodar),
-         age = 1930 - yob,
-         adult_1930 = case_when(
-           # turns 18 in 1930
-           yob <= 1912 ~ "Adult",
-           TRUE ~ "Youth"
-         ),
-         adult_1930 = factor(adult_1930))
+df <- df %>%
+  mutate(
+    yob = parse_number(fodar),
+    age = 1930 - yob,
+    adult_1930 = case_when(
+      # turns 18 in 1930
+      yob <= 1912 ~ "Adult",
+      TRUE ~ "Youth"
+    ),
+    adult_1930 = factor(adult_1930)
+  )
 ```
 
 
 ```{r}
 df %>%
-  group_by(type) %>% 
+  group_by(type_born) %>% 
   slice_sample(n = 5000) %>% 
   ungroup() %>% 
   ggplot(aes(age, log(inkomst))) +
   geom_jitter(aes(colour = adult_1930), alpha = .5, height = 1) +
   geom_smooth() +
-  facet_wrap(~ type) +
+  facet_wrap(~ type_born) +
   scale_color_brewer(palette = "Paired") +
   labs(
     x = "Age in years",
     y = "Log income",
-    colour = "Colour 1930"
+    colour = "Colour 1930",
+    title = "Log income dependent on age in 1930",
+    subtitle = "By type of parish in which an individual is born"
   )
 ```
 
 ### Creating migrant variable
-
 
 ```{r}
 df <- df %>%
   mutate(
     fscbkod = str_squish(fscbkod),
     migrant = case_when(
-      scbkod != fscbkod ~ "Mover",
-      TRUE ~ "Stayer"
+      scbkod != fscbkod ~ "Moved from parish of birth",
+      TRUE ~ "Lives in parish of birth"
     )
   )
+
+df %>%
+  count(type_born, migrant) %>%
+  pivot_wider(names_from = migrant, values_from = n) %>%
+  mutate(pct_share = `Moved from parish of birth` / (`Moved from parish of birth` + `Lives in parish of birth`))
 ```
+
+### Just count how many live in electricity parishes vs born in
+
+```{r}
+df %>%
+  group_by(type_born, type_living_1930) %>%
+  count() %>%
+  ungroup() %>%
+  mutate(pct_share = round(n / sum(n) * 100, 2)) %>%
+  ggplot(aes(type_born, type_living_1930)) +
+  geom_tile(aes(fill = pct_share)) +
+  geom_label(aes(label = pct_share)) +
+  scale_fill_viridis_c() +
+  labs(
+    x = "Type of parish individual was born in",
+    y = "Type of parish individual lives in in 1930",
+    fill = "% share"
+  )
+```
+
+So we have 6 different groups:
+
+```{r}
+df %>% 
+  count(type_born, type_living_1930, migrant)
+
+```
+
+Born in Electricity parish, lives in Electricity parish, same parish of birth
+
+
+
+So 6 pct of population covered in 1930 were born in electriciy parishes
+
+```{r}
+df %>%
+  group_by(type_born) %>%
+  count() %>%
+  ungroup() %>%
+  mutate(pct_share = n / sum(n) * 100)
+
+df %>%
+  group_by(type_living_1930) %>%
+  count() %>%
+  ungroup() %>%
+  mutate(pct_share = n / sum(n) * 100)
+```
+
+
+### Now look at propensity to migrate by type born
+
+Higher propensity to migrate for those born in electricity parishes
+
+```{r}
+df %>%
+  group_by(type_born) %>%
+  count(migrant) %>%
+  ungroup() %>%
+  pivot_wider(names_from = migrant, values_from = n) %>%
+  mutate(pct_moving = Mover / (Mover + Stayer))
+```
+
+So 55 percent of people born in electricity parishes moved out of their parish of birth.
+Versus 45 percent who were born in non-electricity parishes.
+
+### Now look at propensity to migrate by type living in 1930
+
+Fewer of those living in electricity parishes in 1930 
+
+So it seems like net outmigration, right?
+
+```{r}
+df %>%
+  group_by(type_living_1930) %>%
+  count(migrant) %>%
+  ungroup() %>%
+  pivot_wider(names_from = migrant, values_from = n) %>%
+  mutate(pct_moving = Mover / (Mover + Stayer))
+```
+
+### Now looking at the 6 groups
+
+How many do we see an income for?
+
+```{r}
+
+df %>%
+  mutate(income_flag = case_when(
+    is.na(inkomst) ~ "Missing income",
+    TRUE ~ "Observed income"
+  )) %>%
+  group_by(type_born, type_living_1930, migrant) %>%
+  count(income_flag) %>%
+  mutate(pct_share = n / sum(n) * 100) %>%
+  ungroup()
+
+df %>%
+  group_by(type_born, type_living_1930, migrant) %>%
+  summarise(mean_income = round(mean(inkomst, na.rm = T))) %>%
+  ungroup() %>%
+  mutate(
+    category = str_c("Born in ", type_born, " - Living in ", type_living_1930),
+    category = fct_inorder(category)
+  ) %>%
+  ggplot(aes(x = mean_income, y = category, fill = migrant)) +
+  geom_col(position = "dodge") +
+  geom_label(aes(label = mean_income), show.legend = F) +
+  theme(legend.position = "bottom") +
+  labs(
+    x = "Mean income",
+    y = NULL
+  )
+```
+
+
+
+### Just calculate income by group?
+
+This says highest income is for those who are born into an electricity parish and then leave?
+
+```{r}
+df %>%
+  group_by(group, migrant) %>%
+  summarise(mean_income = mean(inkomst, na.rm = T)) %>%
+  ggplot(aes(group, mean_income)) +
+  facet_wrap(~ migrant) +
+  geom_col()
+```
+
+
+Who does not exist? A stayer in treated migrant category. 
+
+```{r}
+df %>% 
+  count(type_born, migrant) 
+```
+
+
+```{r}
+df %>%
+  filter(adult_1930 == "Adult") %>%
+  group_by(type_born, migrant) %>%
+  summarise(mean_income = round(mean(inkomst, na.rm = T))) %>%
+  ungroup() %>%
+  ggplot(aes(type_born, migrant)) +
+  geom_tile(aes(fill = mean_income)) +
+  geom_label(aes(label = mean_income)) +
+  labs(
+    title = "Mean income",
+    subtitle = "By parish of birth type",
+    x = "Parish type which individuals were born in",
+    y = "Left parish of birth?"
+  )
+```
+
+
+```{r}
+df %>%
+  filter(adult_1930 == "Adult") %>%
+  group_by(type_living_1930, migrant) %>%
+  summarise(mean_income = round(mean(inkomst, na.rm = T))) %>%
+  ungroup() %>%
+  ggplot(aes(type_living_1930, migrant)) +
+  geom_tile(aes(fill = mean_income)) +
+  geom_label(aes(label = mean_income)) +
+  labs(
+    x = "Parish type which individuals inhabit in 1930",
+    y = "Left parish of birth?"
+  )
+```
+
+
 
 ### Mover and stayer by age
 
@@ -131,21 +353,21 @@ df %>%
     between(age, 51, 70) ~ "51-70 years",
     TRUE ~ "71 and over"
   )) %>%
-  count(age_groups, migrant, type) %>%
-  group_by(age_groups, type) %>%
+  count(age_groups, migrant, type_born) %>%
+  group_by(age_groups, type_born) %>%
   mutate(
     pct_share = round((n / sum(n) * 100)),
     pct_share_y = pct_share / 100
   ) %>%
   ungroup() %>%
   mutate(pct_share_lab = case_when(
-    migrant == "Stayer" ~ as.character(pct_share),
-    TRUE ~ ""
+    migrant == "Lives in parish of birth" ~ "",
+    TRUE ~ as.character(pct_share)
   )) %>%
   ggplot(aes(age_groups, n, fill = migrant)) +
   geom_col(position = "fill") +
   geom_text(aes(label = pct_share_lab, x = age_groups, y = pct_share_y), vjust = 1.1) +
-  facet_wrap(~type) +
+  facet_wrap(~type_born) +
   scale_y_continuous(labels = scales::percent_format()) +
   scale_fill_brewer(palette = "Paired") +
   labs(
@@ -182,9 +404,9 @@ df %>%
   ) %>%
   ungroup() %>%
   mutate(pct_share_lab = case_when(
-    migrant == "Stayer" ~ as.character(pct_share),
-    TRUE ~ ""
-  )) %>% 
+    migrant == "Lives in parish of birth" ~ "",
+    TRUE ~ as.character(pct_share)
+  )) %>%
   ggplot(aes(age_groups, pct_share, fill = migrant)) +
   geom_col(position = "fill") +
   geom_text(aes(label = pct_share_lab, x = age_groups, y = pct_share_y), vjust = 1.1) +
@@ -195,8 +417,65 @@ df %>%
     x = "Age group",
     y = "Share of those moving out of parish",
     fill = NULL,
-    title = "Share of population living in parish of birth"
+    title = "Share of population living in parish of birth",
   )
+```
+
+### What about incomes in 1930 among migrants in electricity parishes -- again by age??
+
+```{r}
+df %>%
+  mutate(
+    age_groups = case_when(
+      between(age, 0, 18) ~ "0-18 years",
+      between(age, 19, 30) ~ "19-30 years",
+      between(age, 31, 50) ~ "31-50 years",
+      between(age, 51, 70) ~ "51-70 years",
+      TRUE ~ "71 and over"
+    )
+  ) %>%
+  group_by(migrant, age_groups, type_born) %>%
+  summarise(mean_income = mean(inkomst, na.rm = T)) %>%
+  ungroup() %>%
+  ggplot(aes(age_groups, mean_income, fill = migrant)) +
+  geom_col(position = "dodge") +
+  scale_fill_brewer(palette = "Oranges") +
+  facet_wrap(~type_born) +
+  labs(
+    title = "Mean income for movers and stayers",
+    subtitle = "By parish of birth type"
+  )
+```
+
+```{r}
+df %>%
+  mutate(
+    age_groups = case_when(
+      between(age, 0, 18) ~ "0-18 years",
+      between(age, 19, 30) ~ "19-30 years",
+      between(age, 31, 50) ~ "31-50 years",
+      between(age, 51, 70) ~ "51-70 years",
+      TRUE ~ "71 and over"
+    )
+  ) %>%
+  group_by(migrant, age_groups, type_living_1930) %>%
+  summarise(mean_income = mean(inkomst, na.rm = T)) %>%
+  ungroup() %>%
+  ggplot(aes(age_groups, mean_income, fill = migrant)) +
+  geom_col(position = "dodge") +
+  scale_fill_brewer(palette = "Diamond\nclarity") +
+  facet_wrap(~type_living_1930) +
+  labs(
+    title = "Mean income for movers and stayers",
+    subtitle = "By parish of inhabitance in 1930"
+  )
+
+```
+
+
+```{r}
+df %>% 
+  mutate(born_in_electricity = case_when())
 ```
 
 
@@ -212,6 +491,13 @@ map <- read_rds(here::here("data", "st_map.rds"))
 
 map %>% 
   arrange(ref_code_char)
+```
+
+
+```{r}
+map %>% 
+  select(ref_code_char) %>% 
+  count(ref_code_char, sort = T)
 ```
 
 

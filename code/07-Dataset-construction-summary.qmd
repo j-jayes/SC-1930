@@ -1,0 +1,238 @@
+---
+title: "Dataset construction summary"
+format: html
+---
+
+## Purpose
+
+Explain how I have created the new variables so be used. These are created with code below, stored separately from the original and then can be joined. Creating a codebook that can go along with the one from the Swedish census. 
+
+Then this way it is easy to explain. I keep the variable names the same, and for the new ones that I create I keep a record of how they are created. 
+
+This document then needs a summary with just the codebook.
+
+```{r}
+library(tidyverse)
+df <- read.csv(here::here("data", "Folk1930.csv"), sep = "\t")
+
+df <- df %>% as_tibble() %>% 
+  janitor::clean_names()
+
+```
+
+
+## Breakdown
+
+### Age and adults
+
+```{r}
+codebook <- read_rds("data/codebook_1930.rds")
+
+codebook %>% 
+  bind_rows(c(""))
+
+
+df_augmented <- df %>%
+  mutate(
+    yob = parse_number(fodar),
+    age = 1930 - yob,
+    adult_1930 = case_when(
+      # turns 18 in 1930
+      yob <= 1912 ~ "Adult",
+      TRUE ~ "Youth"
+    ),
+    adult_1930 = factor(adult_1930)
+  ) %>% 
+  select(id, age, adult_1930)
+
+# df_augmented %>% write_rds("data/augmented/age.rds")
+```
+
+## Lives in parish of birth
+
+```{r}
+df_augmented <- df %>%
+  mutate(
+    fscbkod = str_squish(fscbkod),
+    lives_in_parish_of_birth = case_when(
+      scbkod != fscbkod ~ 0,
+      TRUE ~ 1
+    )
+  ) %>% 
+  select(id, lives_in_parish_of_birth)
+
+# df_augmented %>% write_rds("data/augmented/lives_in_parish_of_birth.rds")
+```
+
+## Creating indicator variables
+
+
+```{r}
+df_electricity_parishes <- read_rds("data/temp/electricity_parishes_1930.rds")
+
+df_electricity_parishes <- df_electricity_parishes %>% 
+  mutate(parish_code = as.numeric(str_remove(parish_code, "\\d\\d\\d$"))) %>% 
+  mutate(electricity_parish = 1) %>% 
+  distinct()
+
+df_electricity_living_in <- df %>% 
+  select(id, scbkod) %>% 
+  left_join(df_electricity_parishes, by = c("scbkod" = "parish_code")) %>% 
+  mutate(electricity_parish_living_in = case_when(
+    electricity_parish == 1 ~ 1,
+    TRUE ~ 0
+  )) %>% 
+  select(id, electricity_parish_living_in)
+
+df_electricity_living_in %>% 
+  count(electricity_parish_living_in)
+
+df_electricity_born <- df %>% 
+  select(id, fscbkod) %>% 
+  mutate(fscbkod = as.numeric(fscbkod)) %>% 
+  left_join(df_electricity_parishes, by = c("fscbkod" = "parish_code")) %>% 
+  mutate(electricity_parish_born = case_when(
+    electricity_parish == 1 ~ 1,
+    TRUE ~ 0
+  )) %>% 
+  select(id, electricity_parish_born)
+
+df_electricity_born %>% 
+  count(electricity_parish_born)
+
+df_augmented <- df_electricity_living_in %>% 
+  left_join(df_electricity_born)
+
+
+# df_augmented %>% write_rds("data/augmented/electricity_parish_classifications.rds")
+```
+
+How to create the matrix. 
+
+Need three columns. All called group_something.
+
+Contents are electricity parishes, exclusion zone, and control groups.
+
+
+```{r}
+parishes_1930 <- df %>% 
+  # select parishes in the 1930 dataset to left join to later
+  distinct(scbkod)
+
+parish_buffer_matrix_long <- readRDS("~/Recon/SC-1930/Electricity-control-groups/parish_buffer_matrix_long.rds")
+
+parish_buffer_matrix_long %>% 
+  filter(type == "parishes_1930") %>% 
+  select(parish_code, electricity_parish, buffer, value) %>%
+  distinct() %>% 
+  pivot_wider(names_from = buffer, values_from =value, names_prefix = "control_")
+
+# so 47 are in the exclusion zone in 1930 census
+
+parish_buffer_matrix_long %>%
+  filter(type == "parishes_1930") %>%
+  distinct(parish_code, exclusion_zone_indicator) %>%
+  count(exclusion_zone_indicator)
+
+exclusion_zone <- parish_buffer_matrix_long %>%
+  filter(type == "parishes_1930") %>%
+  distinct(parish_code, exclusion_zone_indicator) %>%
+  filter(exclusion_zone_indicator == 1) %>%
+  mutate(parish_code = as.numeric(str_remove(parish_code, "\\d\\d\\d$"))) %>%
+  distinct(parish_code) %>% 
+  mutate(group = "exclusion zone")
+
+# there are 34 electricity parishes with 9 digit codes. let's trim
+
+eps <- parish_buffer_matrix_long %>%
+  filter(type == "parishes_1930") %>%
+  distinct(parish_code, electricity_parish) %>% 
+  filter(electricity_parish == 1) %>% 
+  mutate(parish_code = as.numeric(str_remove(parish_code, "\\d\\d\\d$"))) %>% 
+  distinct(parish_code) %>% 
+  mutate(group = "treatment")
+
+# now the actual control groups
+
+control_100 <- parish_buffer_matrix_long %>%
+  filter(type == "parishes_1930") %>%
+  mutate(parish_code = as.numeric(str_remove(parish_code, "\\d\\d\\d$"))) %>%
+  distinct(parish_code, buffer) %>%
+  filter(buffer == 100) %>%
+  select(-buffer) %>%
+  mutate(group = "control")
+
+control_150 <- parish_buffer_matrix_long %>%
+  filter(type == "parishes_1930") %>%
+  mutate(parish_code = as.numeric(str_remove(parish_code, "\\d\\d\\d$"))) %>%
+  distinct(parish_code, buffer) %>%
+  filter(buffer == 150) %>%
+  select(-buffer) %>%
+  mutate(group = "control")
+
+control_250 <- parish_buffer_matrix_long %>%
+  filter(type == "parishes_1930") %>%
+  mutate(parish_code = as.numeric(str_remove(parish_code, "\\d\\d\\d$"))) %>%
+  distinct(parish_code, buffer) %>%
+  filter(buffer == 250) %>%
+  select(-buffer) %>%
+  mutate(group = "control")
+```
+
+Now join them up without repeats.
+
+188003
+
+```{r}
+# the problem is that there are some parishes that appear in multiple groups.
+# I want to keep the treatment ones first, then then control ones, then the exclusion zones.
+treat_group_100 <- eps %>%
+  bind_rows(control_100) %>%
+  distinct(parish_code, .keep_all = T) %>%
+  bind_rows(exclusion_zone) %>%
+  distinct(parish_code, .keep_all = T)
+
+
+treat_group_100_augmented <- parishes_1930 %>% 
+  left_join(treat_group_100, by = c("scbkod" = "parish_code"))
+
+treat_group_150 <- eps %>%
+  bind_rows(control_150) %>%
+  distinct(parish_code, .keep_all = T) %>%
+  bind_rows(exclusion_zone) %>%
+  distinct(parish_code, .keep_all = T)
+
+treat_group_150_augmented <- parishes_1930 %>% 
+  left_join(treat_group_150, by = c("scbkod" = "parish_code"))
+
+treat_group_250 <- eps %>%
+  bind_rows(control_250) %>%
+  distinct(parish_code, .keep_all = T) %>%
+  bind_rows(exclusion_zone) %>%
+  distinct(parish_code, .keep_all = T)
+
+treat_group_250_augmented <- parishes_1930 %>% 
+  left_join(treat_group_250, by = c("scbkod" = "parish_code"))
+```
+
+Now ready to save
+
+```{r}
+treat_group_100_augmented <- df %>% 
+  select(id, scbkod) %>% 
+  left_join(treat_group_100, by = c("scbkod" = "parish_code")) %>% 
+  rename(tce_group_100 = group)
+
+treat_group_100_150_augmented <- treat_group_100_augmented %>% 
+  inner_join(treat_group_150_augmented) %>% 
+  rename(tce_group_150 = group)
+
+treat_group_100_150_250_augmented <- treat_group_100_150_augmented %>% 
+  inner_join(treat_group_250_augmented) %>% 
+  rename(tce_group_250 = group) 
+
+# treat_group_100_150_250_augmented %>% write_rds("data/augmented/treat_groups_100_150_250.rds")
+```
+
+
+

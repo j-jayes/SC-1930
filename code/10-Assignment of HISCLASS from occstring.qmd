@@ -1,0 +1,332 @@
+---
+title: "Assignment of HISCLASS from occstring"
+format: html
+---
+
+
+### Try HISCLASS from JUNKA's github
+
+```{r}
+library(hisco)
+library(tidyverse)
+
+occ_strings_with_hisco <- read_rds("data/temp/occ_strings_with_hisco.rds")
+
+df <- occ_strings_with_hisco %>% 
+  mutate(hisclass = hisco::hisco_to_ses(hisco, "hisclass"),
+         hisclass_5 = hisco::hisco_to_ses(hisco, "hisclass_5"),
+         hisclass_5_label = hisco::hisco_to_ses(hisco, "hisclass_5", label = T))
+
+df <- df %>% 
+  filter(hisco != 99999,
+         !is.na(hisclass_5)) %>% 
+  mutate(outcome_num = hisclass_5,
+         outcome_fct = hisclass_5_label,
+         title = yrke) %>% 
+  select(outcome_num, outcome_fct, title)
+
+df <- df %>% 
+  mutate(title = stringi::stri_trans_general(title, "latin-ascii"),
+         title = str_to_lower(title),
+         outcome_fct = str_squish(outcome_fct))
+
+df %>% 
+  skimr::skim()
+
+```
+
+So if we have fewer categories in hisclass 5 perhaps we can train a neural network or a support vector machine to assign hisclass labels.
+
+Maybe we can only do it for the ones that have a non-missing hisco but a missing hisclass?
+
+### SVM model
+
+```{r}
+library(tidymodels)
+
+split <- initial_split(df, strata = outcome_num)
+df_train <- training(split)
+df_test <- testing(split)
+
+folds <- vfold_cv(df_train)
+```
+
+
+#### Recipe
+
+Have to try some different tokenizations.
+
+```{r}
+library(textrecipes)
+library(themis)
+
+svm_rec <- recipe(outcome_fct ~ title, data = df_train) %>%
+  step_mutate(
+    title = stringi::stri_trans_general(title, "latin-ascii"),
+    title = str_to_lower(title)
+  ) %>% 
+step_tokenize(title,
+  engine = "tokenizers.bpe",
+  training_options = list(vocab_size = 900)
+) %>%
+  step_tokenfilter(title, max_tokens = 900) %>%
+  step_tf(title) %>%
+  step_smote(outcome_fct)
+
+svm_rec %>% prep() %>% bake(new_data = NULL)
+```
+
+```{r}
+svm_grid <- grid_regular(parameters(svm_rec), levels = 5)
+```
+
+
+```{r}
+svm_spec <- svm_linear() %>%
+  set_mode("classification") %>%
+  set_engine("LiblineaR")
+
+svm_spec
+
+po_wf <- workflow() %>%
+  add_recipe(svm_rec) %>%
+  add_model(svm_spec)
+
+po_wf
+```
+
+
+
+```{r}
+set.seed(234)
+
+po_rs <- fit_resamples(
+  po_wf,
+  folds,
+  metrics = metric_set(accuracy, sens, spec),
+  control = control_resamples(save_pred = TRUE)
+)
+
+# po_rs_tuned <- tune_grid(
+#   po_wf,
+#   folds,
+#   metrics = metric_set(accuracy, sens, spec),
+#   control = control_grid(save_pred = T),
+#   grid = svm_grid
+# )
+```
+
+Let's train a model to classify from string to category. Let's have a look at what HISCLASS means? Should we just take the first digit of a HISCO code?
+
+Following [this guide](https://juliasilge.com/blog/multinomial-volcano-eruptions/)
+
+Let's draw a confusion matrix
+
+```{r}
+po_rs %>%
+  collect_metrics()
+
+po_rs %>%
+  collect_predictions() %>%
+  conf_mat(outcome_fct, .pred_class) %>% 
+  autoplot()
+
+```
+
+```{r}
+# po_rs_tuned %>%
+#   collect_metrics() %>%
+#   ggplot(aes(max_tokens, mean, colour = .metric)) +
+#   geom_point() +
+#   facet_wrap(~.metric)
+```
+
+More tokens seems better! Maybe we are overfitting?
+
+```{r}
+# select_best(po_rs_tuned)
+# 
+# wf_final <- finalize_workflow(po_wf, tibble(max_tokens = 600))
+
+final_fit <- last_fit(po_wf, split)
+
+final_fit <- fit(po_wf, df_train)
+
+# final_fit %>% write_rds("data/models/svm_model_1.rds")
+```
+
+```{r}
+test_tibble <- tibble(title = c("banktjansteman ex."))
+
+predict(final_fit, test_tibble)
+```
+
+### Use this model to predict all of the occpational strings
+
+```{r}
+df <- read.csv(here::here("data", "Folk1930.csv"), sep = "\t")
+
+df <- df %>% as_tibble() %>% 
+  janitor::clean_names()
+```
+
+Read in model
+
+```{r}
+final_fit <- read_rds("data/models/svm_model_1.rds")
+```
+
+
+```{r}
+occupations_to_predict <- df %>% 
+  select(id, yrke) %>% 
+  filter(yrke != "")
+
+occupations_to_predict <- occupations_to_predict %>% 
+  rename(title = yrke)
+
+# occupations_to_predict %>% write_rds("data/temp/occupations_to_predict.rds", compress = "gz")
+
+predictions <- predict(final_fit, occupations_to_predict %>% head(5))
+
+test_occs_classified <- test_occs %>% 
+  bind_cols(predictions)
+
+```
+
+Need to do this in a loop with some chunks.
+
+There are 1 million rows.
+
+So I will do it in chunks of 10,000, there will be 117
+
+```{r}
+occupations_to_predict <- read_rds("data/temp/occupations_to_predict.rds")
+
+end <- ceiling(count(occupations_to_predict) / 10000) %>% pull()
+
+chunks <- 1:end
+
+get_hisco_5 <- function(chunk){
+  message("Getting predictions from ", chunk)
+  
+  rows_top <- chunk*10000 - 10000 + 1
+  rows_bottom <- chunk*10000
+
+  occs_chunk <- occupations_to_predict %>% 
+    filter(between(row_number(), rows_top, rows_bottom))
+  
+  occs_chunk <- bind_cols(occs_chunk, predict(final_fit, occs_chunk))
+    
+  occs_chunk %>% write_rds(glue::glue("data/occs_classification/chunk_{chunk}.rds"))
+
+  
+}
+
+chunks %>% 
+  walk(get_hisco_5)
+
+files <- list.files("data/occs_classification") %>% 
+  as_tibble() %>% 
+  mutate(value = str_c("data/occs_classification/", value)) 
+
+occs <- files %>% 
+  pull(value) %>% 
+  map_dfr(read_rds)
+
+occs <- occs %>% 
+  select(id, hisco_5 = .pred_class)
+
+df_no_occs <- df %>% 
+  select(id, yrke) %>% 
+  filter(yrke == "")
+
+occs <- df_no_occs %>% 
+  select(id) %>% 
+  mutate(hisco_5 = "Missing") %>% 
+  bind_rows(occs) %>% 
+  arrange(id)
+
+# occs %>% write_rds("data/augmented/hisco_5.rds")
+```
+
+
+
+What is important??
+
+```{r}
+po_fit <- extract_fit_parsnip(final_fit)
+
+liblinear_obj <- po_fit$fit$W
+liblinear_df <- tibble(
+  term = colnames(liblinear_obj),
+  estimate = liblinear_obj[1, ]
+)
+liblinear_df
+```
+
+
+### XGboost model
+
+```{r}
+liblinear_df %>%
+  filter(term != "Bias") %>%
+  group_by(estimate > 0) %>%
+  slice_max(abs(estimate), n = 15) %>%
+  ungroup() %>%
+  mutate(term = str_remove(term, "tf_name_")) %>%
+  ggplot(aes(estimate, fct_reorder(term, estimate), fill = estimate > 0)) +
+  geom_col(alpha = 0.6) +
+  geom_text(aes(label = term), family = "IBMPlexSans-Medium") +
+  scale_fill_discrete(labels = c("More from Hawaii", "Less from Hawaii")) +
+  scale_y_discrete(breaks = NULL) +
+  theme(axis.text.y = element_blank()) +
+  labs(
+    x = "Coefficient from linear SVM",
+    y = NULL,
+    fill = NULL,
+  )
+```
+
+### Nearal network
+
+```{r}
+nn_rec <- 
+  recipe(outcome_fct ~ title, data = df_train) %>%
+  step_tokenize(title,
+    engine = "tokenizers.bpe",
+    training_options = list(vocab_size = 900)
+  ) %>%
+  step_tokenfilter(title, max_tokens = 900) %>%
+  step_tf(title) %>% 
+  step_smote(outcome_fct) %>% 
+  step_BoxCox(all_predictors())%>%
+  step_normalize(all_predictors()) %>%
+  prep(training = df_train, retain = TRUE)
+
+
+nn_rec %>% prep() %>% bake(new_data = NULL)
+
+# We will bake(new_data = NULL) to get the processed training set back
+
+# For validation:
+val_normalized <- bake(nn_rec, new_data = df_train, all_predictors())
+# For testing when we arrive at a final model: 
+test_normalized <- bake(nn_rec, new_data = df_test, all_predictors())
+```
+
+Keras
+
+```{r}
+set.seed(57974)
+library(keras)
+nnet_fit <-
+  mlp(epochs = 100, hidden_units = 5, dropout = 0.1) %>%
+  set_mode("classification") %>% 
+  # Also set engine-specific `verbose` argument to prevent logging the results: 
+  set_engine("keras", verbose = 0) %>%
+  fit(outcome_fct ~ title, data = val_normalized)
+
+nnet_fit
+```
+

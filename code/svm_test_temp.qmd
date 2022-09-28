@@ -1,0 +1,38 @@
+---
+title: "svm_test"
+format: html
+---
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(textrecipes)
+```
+
+
+
+```{r}
+library(modeldata)
+
+data("tate_text")
+
+okc_rec <- recipe(~ title + artist, data = tate_text) %>%
+  step_tokenize(title, artist,
+    engine = "tokenizers.bpe",
+    training_options = list(vocab_size = 200)
+  ) %>%
+  step_stopwords(title, artist) %>%
+  step_tokenfilter(title, artist, max_tokens = 10) %>%
+  step_tfidf(title, artist)
+
+okc_obj <- okc_rec %>%
+  prep()
+   
+str(bake(okc_obj, tate_text))
+```
+
+
+
+Questions:
+
+Do I use regression or classification? Labels or numeric outcomes.

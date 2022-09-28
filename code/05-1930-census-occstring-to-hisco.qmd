@@ -1,0 +1,202 @@
+---
+title: "05-1930-census-occstring-to-hisco"
+format: html
+---
+
+## Purpose
+
+I want to match the 1930 census strings with their HISCO codes and then HISCO descriptions.
+
+I have the 1910 HISCO codes and strings that I will use to match. Let's read these in first
+
+```{r}
+library(tidyverse)
+
+occstrings_1910 <- read_rds("data/OCCSTRING_lookup.rds") %>% 
+  rename(hisco = OCCHISCO,
+         occ_string_1910 = OCCSTRNG)
+```
+
+
+```{r}
+df <- read_rds(here::here("data", "folk_1930_short.rds"))
+
+occstrings_1930 <- df %>% 
+  select(yrke) %>% 
+  distinct() %>% 
+  rename(occ_string_1930 = yrke)
+
+occstrings_1930 <- occstrings_1930 %>% 
+  arrange(occ_string_1930)
+```
+
+
+```{r}
+occstrings_1930 <- occstrings_1930 %>% 
+  mutate(occ_string_1930_original = occ_string_1930,
+         occ_string_1930 = str_to_lower(occ_string_1930),
+         occ_string_1930 = str_remove_all(occ_string_1930, "[:punct:]"),
+         occ_string_1930 = str_squish(occ_string_1930))
+
+occstrings_1910 <- occstrings_1910 %>% 
+  mutate(occ_string_1910_original = occ_string_1910,
+         occ_string_1910 = str_to_lower(occ_string_1910),
+         occ_string_1910 = str_remove_all(occ_string_1910, "[:punct:]"),
+         occ_string_1910 = str_squish(occ_string_1910)) 
+```
+
+
+```{r}
+occstrings_1930_joined <- occstrings_1930 %>% 
+  inner_join(occstrings_1910, by = c("occ_string_1930" = "occ_string_1910"))
+```
+
+Okay this doesn't work perfectly but I think it's fine for now.
+
+There are some things that can be improved. For instance Elev is coded as 99999, but this is clearly a student no? It should have a HISCO?
+
+```{r}
+# df <- read_rds(here::here("data", "folk_1930_short.rds"))
+
+df <- df %>% 
+  mutate(id = row_number())
+
+occstrings_1930_to_join <- occstrings_1930_joined %>% 
+  select(occ_string_1930_original, hisco) %>% 
+  distinct()
+
+df <- df %>% 
+  left_join(occstrings_1930_to_join, by = c("yrke" = "occ_string_1930_original"))
+
+df %>% 
+  count(id, sort = T) %>% 
+  count(n)
+
+occ_strings_with_hisco <- df %>% 
+  select(yrke, hisco) %>% 
+  distinct()
+
+# occ_strings_with_hisco %>% write_rds("data/temp/occ_strings_with_hisco.rds")
+
+```
+
+
+```{r}
+df %>% 
+  count(hisco, sort = T)
+
+```
+
+So what proportion do we actually have??
+
+```{r}
+df %>% 
+  mutate(hisco_not_missing = case_when(
+    hisco == 99999 ~ "missing",
+    is.na(hisco) ~ "missing",
+    TRUE ~ "not missing"
+  )) %>% 
+  count(hisco_not_missing)
+```
+
+
+
+Now I want to join in HISCO codes and descriptions - make some explanatory plots to understand this process better:
+
+First I want to make a plot of the most common HISCO codes and their descriptions - a column plot.
+
+```{r}
+hisco_counts <- df %>% 
+  count(hisco)
+
+HISCO_lookup <- readRDS("~/Recon/SC-1930/data/HISCO_lookup.rds")
+
+hisco_counts <- hisco_counts %>% 
+  inner_join(HISCO_lookup, by = c("hisco" = "HISCO_int"))
+
+hisco_top_12 <- hisco_counts %>%
+  slice_max(n, n = 12)
+
+hisco_top_12 %>% 
+  mutate(
+    lab = str_c(hisco, " - ", HISCO_string),
+    lab = fct_reorder(lab, n)
+  ) %>%
+  ggplot(aes(n, lab)) +
+  geom_col() +
+  scale_x_continuous(labels = scales::number_format()) +
+  labs(
+    title = "Most common HISCO codes in 1930 census",
+    x = "Number of census observations with HISCO code",
+    y = NULL
+  )
+
+```
+
+Then I want to make a facet plot with most common occupational strings for each HISCO code.
+
+```{r}
+occstring_counts <- df %>% 
+  count(hisco, yrke)
+
+occstring_counts <- occstring_counts %>% 
+  inner_join(HISCO_lookup, by = c("hisco" = "HISCO_int"))
+
+library(tidytext)
+
+occstring_counts %>%
+  filter(hisco %in% hisco_top_12$hisco) %>%
+  group_by(hisco) %>%
+  slice_max(n, n = 5) %>%
+  ungroup() %>%
+  mutate(yrke = reorder_within(yrke, n, hisco)) %>%
+  ggplot(aes(n, yrke)) +
+  geom_col(aes(fill = HISCO_string), show.legend = F) +
+  facet_wrap(~HISCO_string, scales = "free") +
+  scale_y_reordered() +
+  labs(x = NULL,
+       y = NULL,
+       title = "Mot common occupational strings in 1930 census",
+       subtitle = "For the 12 most common HISCO codes")
+
+
+```
+
+## HISCLASS
+
+From: https://datasets.iisg.amsterdam/dataset.xhtml?persistentId=hdl:10622/HEFSW2 
+
+Maas; Van Leeuwen, 2016, "HISCLASS", https://hdl.handle.net/10622/HEFSW2, IISH Data Collection, V1
+
+Note that there are some weird things going on here with negative HISCLASS values event when HISCO is normal...
+
+Come back to this...
+
+There is not a one-to-one relationship between HISCO and HISCLASS. Why????? Is there more to it?
+
+Yes - there is also the status and relationship variables. These don't appear in my data though... So what must be done? 
+
+Maybe ask Jakob?
+
+```{r}
+hisco_hisclass_lookup <- readxl::read_excel("data/hisco_hisclass_lookup.xlsx")
+
+hisco_hisclass_lookup <- hisco_hisclass_lookup %>% 
+  filter(HISCO > 0) %>% 
+  arrange(HISCO)
+
+hisco_hisclass_lookup <- hisco_hisclass_lookup %>% 
+  filter(HISCLASS > 0)
+
+hisco_hisclass_lookup %>% 
+  distinct(HISCO)
+  
+# hisco_hisclass_lookup %>% write_rds("data/hisco_hisclass_lookup.rds")
+```
+
+
+```{r}
+df %>% 
+  inner_join(hisco_hisclass_lookup, by = c("hisco" = "HISCO"))
+```
+

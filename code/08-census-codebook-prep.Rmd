@@ -1,0 +1,59 @@
+---
+title: "census-codebook"
+author: "JJayes"
+date: "2022-09-22"
+output: html_document
+---
+
+## Purpose - making a codebook of the 1930 census.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+df <- read.csv(here::here("data", "Folk1930.csv"), sep = "\t")
+
+df <- df %>% as_tibble() %>% 
+  janitor::clean_names()
+
+colnames_1930 <- colnames(df) %>%
+  as_tibble() %>%
+  rename(field = value)
+```
+
+
+```{r}
+codebook <- readxl::read_excel("data/census_codebook.xlsx") %>% 
+  janitor::clean_names()
+
+codebook <- codebook %>% 
+  mutate(field = janitor::make_clean_names(field))
+
+# codebook %>% write_rds("data/codebook_1930.rds")
+```
+
+Find new columns
+
+```{r}
+new_cols <- colnames_1930 %>% 
+  anti_join(codebook)
+```
+
+```{r}
+# new_cols %>% 
+#   mutate(description = c(
+#     "Date pdated",
+#     "Household type",
+#     "?",
+#     "?",
+#     ""
+#   ))
+```
+
+```{r}
+
+```
+
+

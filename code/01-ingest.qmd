@@ -25,6 +25,28 @@ df <- df %>% as_tibble() %>%
 ```
 
 
+### Now selecting variables that I want to keep in order to match parishes over time.
+
+I have to select the set of variables that will allow me to match parishes over time to both the other censuses and the maps. 
+
+There is a six digit ID code for the parish - but it is not the same as the 9 digit code that identifies parishes in the map and other censuses.
+
+Let's first look and see if we can use the county_numebr and parish_number_in_county to identify the parish.
+
+```{r}
+df %>% 
+  colnames()
+
+df %>% 
+  count(arkbild, sort = T)
+
+df %>% 
+  select(lannr, forsnr, arkbild, kontrakt, scbkod) %>% 
+  count(kontrakt)
+
+
+```
+
 
 
 ```{r}

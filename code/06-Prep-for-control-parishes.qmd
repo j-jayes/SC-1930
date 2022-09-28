@@ -1,0 +1,904 @@
+---
+title: "06-Prep-for-control-parishes"
+format: html
+---
+
+## Purpose
+
+Find the parishes that were used in More Power to the People. 
+
+Then match these to the map from 1921? Then try and find a reasonable control group under a bunch of different specifications.
+
+### Reading in the parishes from more power to the people.
+
+```{r}
+library(tidyverse)
+library(haven)
+
+df_mttp <- read_dta(here::here("data/MPTP_replication/data/data Figure 2 and Table A2.dta"))
+
+df_mttp <- df_mttp %>% 
+  filter(year == 1920,
+         iline == 1)
+
+# are they 8 or 9 digit codes?
+df_mttp %>% 
+  mutate(nchar = nchar(parish_code)) %>% 
+  count(nchar)
+# leading zero for 8 digit should be added if diff from map.
+```
+
+
+Note that we can add in the matched variables from here like rail and labour force. Need to check balance in 1930.
+
+```{r}
+df_to_join <- df_mttp %>% 
+  select(parish_name, parish_code, iline)
+
+# df_to_join %>% write_rds("data/temp/more_power_to_the_people_electricity_parishes.rds")
+```
+
+
+### Getting map from 1920
+
+```{r}
+library(histmaps)
+data("geom_meta")
+
+library(sf)
+p_map <- get_boundaries("1920", "parish")
+
+st_map <- p_map %>% left_join(geom_meta, by = c("geom_id"))
+
+# map same as data from more power to the people. no leading zero needed.
+st_map %>% 
+  mutate(nchar = nchar(nadkod)) %>% 
+  count(nchar)
+
+```
+
+### Join the two together.
+
+When I join just the electricity parishes - I go from 186 to 177. Why?
+
+```{r}
+electricity_parishes_pass_1 <- st_map %>% 
+  inner_join(df_to_join, by = c("nadkod" = "parish_code"))
+
+df_to_join %>% 
+  anti_join(electricity_parishes_pass_1) %>% 
+  knitr::kable()
+```
+
+Try to find these ones in the st_map.
+
+```{r}
+st_map %>% 
+  filter(str_detect(name, "Udd"))
+```
+
+So we can perhaps match these by name
+
+### What about just looking at the 1930 census for the names?
+
+
+## Starting point: Folk1930.csv
+
+```{r}
+df <- read.csv(here::here("data", "Folk1930.csv"), sep = "\t")
+
+df <- df %>% as_tibble() %>% 
+  janitor::clean_names()
+
+# df %>% head(50) %>% view()
+```
+
+
+### Now selecting variables that I want to keep in order to match parishes over time.
+
+I have to select the set of variables that will allow me to match parishes over time to both the other censuses and the maps. 
+
+There is a six digit ID code for the parish - but it is not the same as the 9 digit code that identifies parishes in the map and other censuses.
+
+Let's first look and see if we can use the county_numebr and parish_number_in_county to identify the parish.
+
+```{r}
+df %>% 
+  colnames()
+
+df %>% 
+  count(arkbild, sort = T)
+
+df %>% 
+  summarise(across(c(lannr, forsnr, arkbild, kontrakt, scbkod), n_distinct))
+
+```
+
+Let's just write down so we know what we're doing:
+
+There are:
+- 23 counties
+- 197 parish_numbers within counties.
+- 1126 parish_names
+- 1148 parish_codes
+
+So we cannot match on name alone. Can we match on name within county?
+
+```{r}
+df %>% 
+  group_by(lannr) %>% 
+  count(arkbild)
+
+```
+
+There are 1166 parish names when grouping by county_number
+
+```{r}
+parishes_to_match <- df %>% 
+  select(lannr, forsnr, arkbild, kontrakt, scbkod) %>% 
+  distinct()
+
+# parishes_to_match %>% write_rds("data/temp/parishes_to_match.rds")
+```
+
+Now I want to check if there is a match up between 
+
+```{r}
+df_to_join %>% 
+  select(parish_name, parish_code)
+
+```
+
+From more power to the people there is: VASSÄNDA NAGLUMS FÖRSAMLING   158001002 not in parishes to match
+
+TEGELSMORA FÖRSAMLING          36004000 is in parishes to match
+
+```{r}
+parishes_to_match %>% 
+  mutate(arkbild = str_to_lower(arkbild)) %>% 
+  filter(str_detect(arkbild, str_to_lower("UDDEVALLA")))
+```
+
+So far it seems that all parishes which end in 000 appear. 
+Let's check this.
+
+```{r}
+zero_ending_codes <- df_to_join %>% 
+  filter(str_detect(parish_code, "000"))
+
+zero_ending_codes <- zero_ending_codes %>% 
+  mutate(parish_code_short = str_remove(parish_code, "000"),
+         parish_code_short = as.numeric(parish_code_short))
+```
+
+Now there 168 of our 186 electricity parishes that end in 000. Now let's try to match these without parishes to match.
+
+```{r}
+parishes_joined_by_code <- zero_ending_codes %>% 
+  select(parish_name, parish_code_short) %>% 
+  inner_join(parishes_to_match, by = c("parish_code_short" = "scbkod"))
+
+parishes_joined_by_code %>% 
+  count(parish_name, parish_code_short, sort = T)
+
+# parishes_joined_by_code %>% 
+#   write_rds("data/temp/electricity_parishes_1930.rds")
+```
+
+Now we get just 32, lol!
+
+Let's do an antijoin and then try to match on names alone.
+
+```{r}
+zero_ending_codes %>% 
+  select(parish_name, parish_code_short) %>% 
+  anti_join(parishes_to_match, by = c("parish_code_short" = "scbkod"))
+```
+
+So let's look for these names in the parishes to match by parish_name
+
+```{r}
+df_to_join <- df_to_join %>%
+  mutate(
+    parish_name_lower = str_to_lower(str_remove(parish_name, "FÖRSAMLING")),
+    parish_name_lower = str_remove(parish_name_lower, "län"),
+    parish_name_lower = str_remove(parish_name_lower, " [a-z] "),
+    parish_name_lower = str_squish(parish_name_lower)
+  )
+
+parishes_joined_by_name <- df_to_join %>%
+  inner_join(
+    parishes_to_match %>%
+      mutate(parish_name_lower = str_to_lower(arkbild))
+  ) %>% distinct()
+  
+parishes_joined_by_name %>% 
+  filter(str_detect(parish_name, "EKEBY"))
+```
+
+Now we get 20 that join on name.
+
+Let's check the overlap between these 34 and the ones that joined by codes.
+
+```{r}
+parishes_joined_by_code %>% 
+  select(parish_name) %>% 
+  bind_rows(parishes_joined_by_name %>% select(parish_name)) %>% 
+  count(parish_name, sort = T)
+```
+
+It's complete overlap between joined on name and joined on code. Maybe we just have to face the fact that these 32 are the ones we have to work with.
+
+
+## How to match control parishes.
+
+Distance around them?
+
+```{r}
+hydro <- tibble(name = c("älvkarleby", "olidan"),
+       x = c(17.4489, 12.2727),
+       y = c(60.5686,58.2750))
+
+hydro <- st_sf(st_sfc(st_point(c(17.4489, 60.5686)),st_point(c(12.2727, 58.2750))), crs = 4326) %>% 
+  mutate(name = case_when(
+    row_number() == 1 ~ "älvkarleby",
+    TRUE ~ "olidan"
+  )) %>% 
+  rename(geometry = st_sfc.st_point.c.17.4489..60.5686....st_point.c.12.2727..58.275...) %>% 
+  st_transform(crs = 3006)
+
+hydro %>% 
+  mutate(line = st_combine(geometry)) %>% 
+  ggplot() +
+  geom_sf(aes(geometry = line))
+
+st_map %>% 
+  ggplot() +
+  geom_sf(aes(geometry = geometry)) +
+  geom_sf_label(aes(label = name), data = hydro)
+```
+
+### points to lines function
+
+```{r}
+points_to_lines <- function(data, ids, names, order_matters = TRUE) {
+  
+  # dataframe of combinations - based on row index
+  idx <- expand.grid(start = seq(1, nrow(data), 1),
+                     end = seq(1, nrow(data), 1)) %>%
+    # no line with start & end being the same point
+    dplyr::filter(start != end) %>%  
+    # when order doesn't matter just one direction is enough
+    dplyr::filter(order_matters | start > end) 
+  
+  
+  # cycle over the combinations
+  for (i in seq_along(idx$start)) {
+    
+    # line object from two points
+    wrk_line  <- data[c(idx$start[i], idx$end[i]), ] %>% 
+      st_coordinates() %>% 
+      st_linestring() %>% 
+      st_sfc()
+    
+    # a single row of results dataframe
+    line_data <- data.frame(
+      start = pull(data, ids)[idx$start[i]],
+      end = pull(data, ids)[idx$end[i]],
+      label = paste(pull(data, names)[idx$start[i]], 
+                    "-", 
+                    pull(data, names)[idx$end[i]]),
+      geometry = wrk_line
+    )
+    
+    # bind results rows to a single object
+    if (i == 1) {
+      res <- line_data
+      
+    } else {
+      res <- dplyr::bind_rows(res, line_data)
+      
+    } # /if - saving results
+    
+  } # /for
+  
+  # finalize function result
+  res <- sf::st_as_sf(res, crs = sf::st_crs(data))
+  
+  res
+  
+} # /function
+
+hydro_line <- points_to_lines(hydro, ids = "name", names = "name") %>% 
+  slice(1) 
+```
+
+
+```{r}
+st_map %>%
+  ggplot() +
+  geom_sf(aes(geometry = geometry)) +
+  geom_sf(data = hydro_line, colour = "red") +
+  geom_sf_label(aes(label = name), data = hydro)
+
+```
+
+Now for the buffer.
+
+```{r}
+hydro_line_buffer <- hydro_line %>% 
+  st_transform(crs = 3006) %>% 
+  st_buffer(., dist = 100000)
+
+
+st_map %>%
+  ggplot() +
+  geom_sf(aes(geometry = geometry)) +
+  geom_sf(data = hydro_line_buffer, fill = "red", alpha = .5) +
+  geom_sf_label(aes(label = name), data = hydro)
+
+# check that it's indeed 100 km on either side.
+library(leaflet)
+
+leaflet() %>% 
+  addTiles() %>% 
+  addMeasure(primaryLengthUnit = "meters") %>% 
+  addMarkers(data = hydro) %>% 
+  addPolygons(data = hydro_line_buffer)
+```
+
+Can also do it another way: can calculate closest point to the line for every parish centroid and then minimize that per line.
+
+Come back to this...
+
+```{r}
+
+```
+
+Now looking for the overlap between the st map and the buffer.
+
+```{r}
+st_map_trans <- st_transform(st_map, crs = 3006)
+
+sf::sf_use_s2(FALSE)
+
+st_map_intersected <- st_intersection(hydro_line_buffer, st_map_trans)
+
+sf::sf_use_s2(TRUE)
+```
+
+```{r}
+st_map_intersected %>% 
+  ggplot() +
+  geom_sf()
+```
+
+Can use joined instead of intersected so as to preserve the geography of the parishes.
+
+```{r}
+st_map_joined <- st_join(hydro_line_buffer, st_map_trans) %>%
+  filter(!is.na(geom_id)) 
+
+geom_ids <- st_map_joined %>%
+  as_tibble() %>%
+  select(geom_id) %>% 
+  pull()
+
+st_map_joined <- st_map %>% 
+  filter(geom_id %in% geom_ids)
+
+st_map_joined %>% 
+  ggplot() +
+  geom_sf()
+```
+
+What I should really do is find the centrepoints of the parishes and then st_join and then filter.
+
+I can make a function to do this so as to test the different components.
+
+```{r}
+
+# this function produces two files: first it creates a list of geom_ids from the intersecting
+# parishes within the buffer zone based on the distance.
+# then it produces that list filtered by the ones which appear in the 1930 census.
+
+get_parishes_from_buffer <- function(buffer) {
+  # provide distance in km
+  buffer_m <- buffer * 1000
+  
+  message("Distance of buffer is: ", buffer_m)
+  hydro_line_buffer <- hydro_line %>%
+    st_transform(crs = 3006) %>% 
+    st_buffer(dist = buffer_m)
+
+  st_map_joined <- st_join(hydro_line_buffer, st_map_trans) %>%
+    filter(!is.na(geom_id))
+
+  geom_ids <- st_map_joined %>%
+    as_tibble() %>%
+    dplyr::select(geom_id) %>% 
+    mutate(buffer = buffer)
+  
+  geom_ids %>% write_rds(glue::glue("data/buffer/geom_ids_total_", buffer, ".rds"))
+
+  st_map_joined <- st_map %>%
+    filter(geom_id %in% geom_ids$geom_id)
+
+  scbkod_geom_id <- st_map_joined %>%
+    mutate(
+      parish_code_6 = str_sub(ref_code.x, 4, 9),
+      parish_code_6 = as.numeric(parish_code_6)
+    ) %>%
+    inner_join(parishes_to_match, by = c("parish_code_6" = "scbkod")) %>% 
+    as_tibble() %>% 
+    dplyr::select(geom_id, scbkod = parish_code_6) %>% 
+    mutate(buffer = buffer)
+  
+  scbkod_geom_id %>% write_rds(glue::glue("data/buffer/scbkod_geom_id_", buffer, ".rds"))
+  
+}
+
+# st_map %>%
+#   ggplot() +
+#   geom_sf(aes(geometry = geometry)) +
+#   geom_sf(data = hydro_line_buffer, fill = "red", alpha = .5) +
+#   geom_sf_label(aes(label = name), data = hydro)
+
+
+tibble(buffer = c(50, 100, 150, 200, 250)) %>% 
+  pull(buffer) %>% 
+  purrr::walk(get_parishes_from_buffer)
+
+
+```
+
+
+Draw this in a map
+
+```{r}
+files <- list.files(path = "data/buffer")
+
+files <- files %>% 
+  as_tibble() %>% 
+  filter(str_detect(value, "scbkod")) %>% 
+  mutate(value = str_c("data/buffer/", value))
+
+geom_ids_1930 <- files %>% 
+  pull(value) %>% 
+  purrr::map_dfr(read_rds)
+
+files <- list.files(path = "data/buffer")
+
+files <- files %>% 
+  as_tibble() %>% 
+  filter(!str_detect(value, "scbkod")) %>% 
+  mutate(value = str_c("data/buffer/", value))
+
+geom_ids_total <- files %>% 
+  pull(value) %>% 
+  map_dfr(read_rds)
+```
+
+Now write a function to calculate summary statistics about 1930 census from control group.
+
+## Need to think about data prep here too 
+
+I have just copied this for the moment but it isn't the best option.
+
+```{r}
+eps <- read_rds("Sweden-electrification-explorer/electricity_parishes_names.rds") %>% 
+  mutate(parish = as.numeric(parish))
+
+df <- df %>% 
+  inner_join(eps, by = c("scbkod" = "parish")) %>% 
+  rename(type_living_1930 = type)
+
+df <- df %>% 
+  inner_join(eps, by = c("fscbkod" = "parish")) %>% 
+  rename(type_born = type)
+
+df <- df %>%
+  mutate(group = case_when(
+    type_born == "Electricity parish" & type_living_1930 == "Electricity parish" ~ "Treated & lives in Electricity parish",
+    type_born == "Electricity parish" & type_living_1930 == "Not electricity parish" ~ "Treated migrant",
+    type_born == "Not electricity parish" & type_living_1930 == "Not electricity parish" ~ "Untreated non-migrant",
+    type_born == "Not electricity parish" & type_living_1930 == "Electricity parish" ~ "Untreated migrant",
+    TRUE ~ "Errors"
+  ))
+
+df <- df %>%
+  mutate(
+    yob = parse_number(fodar),
+    age = 1930 - yob,
+    adult_1930 = case_when(
+      # turns 18 in 1930
+      yob <= 1912 ~ "Adult",
+      TRUE ~ "Youth"
+    ),
+    adult_1930 = factor(adult_1930)
+  )
+
+df <- df %>%
+  mutate(
+    fscbkod = str_squish(fscbkod),
+    migrant = case_when(
+      scbkod != fscbkod ~ "Moved from parish of birth",
+      TRUE ~ "Lives in parish of birth"
+    )
+  )
+
+```
+
+What must my summary function do?
+
+First I want to create a map of the different parishes in the different buffer zones. 
+
+Then I want to superimpose the electreicity parishes.
+
+Then we must see how many of these appear in the 1930 census. 
+
+I want to write this up as a report for Kerstin and Jakob. 
+
+So first I must make the leaflet body.
+
+It will have a slider input that tells is what the buffer distance is.
+
+```{r}
+# choose between 
+# unique(geom_ids_1930$buffer)
+# 
+# buffer_input <- 200
+# 
+# geom_ids_filtered <- geom_ids_1930 %>% 
+#   filter(buffer == buffer_input) %>% 
+#   pull(geom_id)
+# 
+# st_map %>% 
+#   filter(geom_id %in% geom_ids_filtered) %>% 
+#   ggplot() +
+#   geom_sf()
+```
+
+Things to remember:
+
+I want to always have the mapping done in leaflet in EPSG 4326. So I need to just use the geom_ids to match across time.
+
+Let's try first to make a wide table I can attach as an indicator variable.
+
+```{r}
+parish_buffer_matrix <- st_map %>% 
+  as_tibble() %>% 
+  dplyr::select(geom_id, ref_code.x) %>% 
+  mutate(parish_code = as.numeric(str_sub(ref_code.x, 4, 12))) %>% 
+  dplyr::select(-ref_code.x)
+
+geom_ids_buffer_1930 <- geom_ids_1930 %>% 
+  dplyr::select(-scbkod) %>% 
+  mutate(indicator = 1) %>% 
+  distinct() %>% 
+  pivot_wider(names_from = buffer, values_from = indicator, names_prefix = "buffer_straight_line_1930_")
+
+geom_ids_buffer_total <- geom_ids_total %>% 
+  mutate(indicator = 1) %>% 
+  distinct() %>% 
+  pivot_wider(names_from = buffer, values_from = indicator, names_prefix = "buffer_straight_line_total_")
+
+
+parish_buffer_matrix <- parish_buffer_matrix %>% 
+  left_join(geom_ids_buffer_1930) %>% 
+  left_join(geom_ids_buffer_total)
+
+parish_buffer_matrix <- parish_buffer_matrix %>% 
+  left_join(df_to_join) %>% 
+  dplyr::select(-parish_name) %>% 
+  rename(electricity_parish = iline)
+
+# parish_buffer_matrix %>% write_rds("data/temp/parish_buffer_matrix.rds")
+
+parish_buffer_matrix %>% 
+  pivot_longer(-c(geom_id, parish_code, parish_name_lower)) %>% 
+  filter(!is.na(value))
+
+```
+
+### Calculate averages for these ones.
+
+Can export this as a dataset I think rather than keeping all of the calculations in the Shiny App?
+
+Or should I use individuals as the unit of observation?
+
+The purpose is to create one big dataframe right - with the parish-level variables?
+
+Yes - so I need to create a bunch of ways of splicing the big dataset and then compare outcomes in 1930 and the other years.
+
+So I need to work on the control groups.
+
+Then need to also have the HISCO and HISCLASS summaries for the earlier census periods.
+
+
+### How else to do control group:
+
+Can make a one-parish-away kind of thing.
+
+Maybe try using st_nearest?
+
+Following [this post](https://stackoverflow.com/questions/63501977/how-to-filter-out-each-polygon-from-its-list-of-neighbors-with-sfst-intersects) on stack overflow.
+
+```{r}
+# file_loc = system.file("shape/nc.shp", package="sf")
+# 
+# ## Read the shapefile into R
+# nc = st_read(file_loc, quiet = TRUE)
+# 
+# nc1 <- nc %>% mutate(c_id = 1:nrow(nc))        
+# n = 100                  
+# grp <- st_intersects(nc1, nc1[n,1]   , sparse = F ) 
+# 
+# neighborhood <- nc1[grp,]
+# neighborhood 
+# 
+# plot(neighborhood$geom)
+# plot(nc1[n,1], col = 'blue', add = TRUE)   #
+```
+
+
+So now what I should do is make a union object of the path across the Western Line.
+
+Then I find all of the parishes that are neighbouring this.
+
+Then I exclude these from the threshold parishes. This means that I have all of the parishes within the threshold minus the ones adjacent to an electricity parish.
+
+Great - now I have the one parish buffer.
+
+```{r}
+st_map_with_el_parished <- st_map_with_el_parished %>% st_transform(crs = 4326)
+
+grp <- st_intersects(st_map_with_el_parished, union_of_el_parishes, sparse = F ) 
+
+neighborhood <- st_map_with_el_parished[grp,]
+neighborhood 
+
+neighborhood %>%
+  ggplot() +
+  geom_sf() +
+  geom_sf(alpha = .5, fill = "red", data = union_of_el_parishes)
+
+exclusion_zone <- neighborhood %>% 
+  as_tibble() %>% 
+  dplyr::select(geom_id, parish_code)
+
+el_parishes <- st_map_with_el_parished %>% 
+  filter(iline == 1) %>% 
+  as_tibble() %>% 
+  dplyr::select(geom_id, iline)
+
+exclusion_zone <- exclusion_zone %>% 
+  filter(!geom_id %in% el_parishes$geom_id)
+
+# exclusion_zone %>% write_rds("data/temp/exclusion_zone.rds")
+```
+
+### Exclusion zone joined to buffer
+
+```{r}
+exclusion_zone_to_join <- exclusion_zone %>% 
+  mutate(exclusion_zone_indicator = 1) %>% 
+  dplyr::select(-parish_code)
+
+parish_buffer_matrix <- parish_buffer_matrix %>% 
+  left_join(exclusion_zone_to_join)
+```
+
+
+### Pivot longer the buffer zones
+
+```{r}
+parish_buffer_matrix_long <- parish_buffer_matrix %>%
+  pivot_longer(contains("buffer")) %>%
+  separate(name, into = c("type", "buffer"), sep = "_total|_1930", remove = F) %>%
+  mutate(
+    buffer = parse_number(buffer),
+    type = ifelse(str_detect(name, "1930"), "parishes_1930", "all_parishes")
+  ) %>% 
+  filter(!is.na(value))
+
+```
+
+
+
+Now I want to draw it up in leaflet.
+
+To explain the control group we want:
+
+1. Electricity parishes in one block.
+
+2. Buffer zone of one adjascent parish.
+
+3. Comparison parishes that differ by buffer zone.
+
+All must be changed in the crs to 4326
+
+Great so this is the section for total parishes.
+
+### Theory - in blocks.
+
+```{r}
+st_map_with_el_parished <- st_map %>%
+  mutate(parish_code = as.numeric(str_sub(ref_code.x, 4, 12))) %>%
+  left_join(df_to_join)
+
+union_of_el_parishes <- st_map_with_el_parished %>%
+  filter(iline == 1) %>%
+  st_union() %>%
+  st_transform(crs = 4326)
+
+union_exclusion_zone <- st_map %>%
+  inner_join(exclusion_zone) %>%
+  st_union() %>%
+  st_transform(crs = 4326)
+
+union_parishes_in_buffer <- st_map %>%
+  inner_join(parish_buffer_matrix_long %>%
+    filter(
+      type == "all_parishes",
+      buffer == 100,
+      is.na(exclusion_zone_indicator),
+      is.na(electricity_parish)
+    ), by = "geom_id") %>%
+  st_union() %>%
+  st_transform(crs = 4326)
+
+library(leaflet)
+
+leaflet() %>%
+  addTiles() %>%
+  addPolygons(data = union_of_el_parishes, color = "blue") %>%
+  addPolygons(data = union_exclusion_zone, color = "red") %>%
+  addPolygons(data = union_parishes_in_buffer, color = "green")
+```
+
+Writing all of this out
+
+```{r}
+df_to_join %>% write_rds("Electricity-control-groups/data/df_to_join.rds")
+st_map %>% write_rds("Electricity-control-groups/data/st_map.rds")
+exclusion_zone %>% write_rds("Electricity-control-groups/data/exclusion_zone.rds")
+parish_buffer_matrix_long %>% write_rds("Electricity-control-groups/parish_buffer_matrix_long.rds")
+```
+
+
+### Theory - by parish
+
+```{r}
+st_map_only_el_parished <- st_map_with_el_parished %>% 
+  filter(iline == 1) %>% 
+  st_transform(crs = 4326)
+
+to_exclude_from_buffer_map <- st_map %>% 
+  filter(!geom_id %in% st_map_only_el_parished$geom_id) %>% 
+  inner_join(exclusion_zone) %>% 
+  st_transform(crs = 4326)
+
+parishes_in_buffer <- st_map %>%
+  inner_join(parish_buffer_matrix_long %>%
+    filter(
+      type == "all_parishes",
+      buffer == 50,
+      is.na(exclusion_zone_indicator),
+      is.na(electricity_parish)
+    ), by = "geom_id") %>%
+  st_transform(crs = 4326)
+
+leaflet() %>%
+  addTiles() %>%
+  addPolygons(data = st_map_only_el_parished, color = "blue") %>%
+  addPolygons(data = to_exclude_from_buffer_map, color = "red") %>%
+  addPolygons(data = parishes_in_buffer, color = "green")
+```
+
+
+
+### Practice - 1930 parishes
+
+Need 1930 electricity parishes...
+
+```{r}
+# el_paishes_1930 <- read_rds("data/temp/electricity_parishes_1930.rds")
+# 
+# el_parishes_1930 <- el_parishes_1930 %>% 
+#   mutate(parish_code = as.numeric(str_c(parish_code_short, "000"))) %>% dplyr::select(parish_code)
+
+# el_parishes_1930 %>% write_rds("data/temp/electricity_parishes_1930.rds")
+
+el_paishes_1930 <- read_rds("data/temp/electricity_parishes_1930.rds") %>% 
+  mutate(ep_1930 = 1)
+
+# el_paishes_1930 %>% write_rds("Electricity-control-groups/el_paishes_1930.rds")
+```
+
+
+```{r}
+st_map_only_el_parished_1930 <- st_map_with_el_parished %>% 
+  inner_join(el_paishes_1930) %>% 
+  st_transform(crs = 4326)
+
+# st_map_only_el_parished_1930 %>% write_rds("Electricity-control-groups/data/st_map_only_el_parished_1930.rds")
+
+to_exclude_from_buffer_map_1930 <- st_map %>% 
+  filter(!geom_id %in% st_map_only_el_parished$geom_id) %>% 
+  inner_join(exclusion_zone) %>% 
+  st_transform(crs = 4326)
+
+parishes_in_buffer_1930 <- st_map %>%
+  inner_join(parish_buffer_matrix_long %>%
+    filter(
+      type == "parishes_1930",
+      buffer == 100,
+      is.na(exclusion_zone_indicator),
+      is.na(electricity_parish)
+    ), by = "geom_id") %>%
+  st_transform(crs = 4326)
+
+leaflet() %>%
+  addTiles() %>%
+  addPolygons(data = st_map_only_el_parished_1930, color = "blue") %>%
+  addPolygons(data = to_exclude_from_buffer_map_1930, color = "red") %>%
+  addPolygons(data = parishes_in_buffer_1930, color = "green")
+```
+
+
+Need to refine the choices.
+
+Buffer straight line 50km.
+Buffer straight line 100km
+Buffer straight line 
+
+```{r}
+df_treatment <- el_paishes_1930 %>% 
+  dplyr::select(-ep_1930) %>% 
+  mutate(type = "treatment")
+
+df_control <- parishes_in_buffer_1930 %>% 
+  as_tibble() %>% 
+  dplyr::select(parish_code) %>% 
+  mutate(type = "control")
+
+df_in_reg <- df_treatment %>% 
+  bind_rows(df_control)
+
+df_in_reg <- df_in_reg %>% 
+  mutate(parish_code = as.numeric(str_remove(parish_code, "[0-9][0-9][0-9]$")))
+
+df_in_reg_i <- df %>% 
+  inner_join(df_in_reg, by = c("scbkod" = "parish_code"))
+```
+
+Now I have the individuals who live in the two groups.
+
+There are 800,000, with 85,000 in treatment
+
+```{r}
+df_in_reg_i %>% 
+  count(type)
+```
+
+
+```{r}
+df_in_reg_i %>%
+  group_by(type) %>%
+  summarise(
+    mean_income = mean(inkomst, na.rm = T),
+    mean_wealth = mean(formogh, na.rm = T),
+    total_population = n(),
+    
+  )
+```
+
+
+
+
+
+
+
+
+

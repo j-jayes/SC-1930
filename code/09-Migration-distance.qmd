@@ -1,0 +1,334 @@
+---
+title: "Migration-distance"
+format: html
+---
+
+## Purpose
+
+Create a matrix of distances between centroids of each parish on the map.
+
+Then use it to calculate distribution of migration distances by parish type
+
+### How to do this??
+
+First I need to get the map. Then I need to get the centroids of each parish.
+
+Then I need to calculate the distance between each one.
+
+Then I need to make a matrix or a long table.
+
+### Starting
+
+Get map
+
+```{r}
+library(histmaps)
+data("geom_meta")
+library(sf)
+p_map <- get_boundaries("1930", "parish")
+st_map <- p_map %>% left_join(geom_meta, by = c("geom_id"))
+st_map <- st_map %>%
+  mutate(parish_code_6 = as.numeric(str_sub(ref_code.x, 4, 9)))
+```
+
+Get centroids. We keep it in SWEREF99
+
+```{r}
+centroids <- st_centroid(st_map)
+
+centroids %>% 
+  ggplot() +
+  geom_sf()
+```
+
+I'm just going to write a loop I think
+
+```{r}
+list_of_centroids <- centroids %>%
+  select(parish_code_6) %>%
+  arrange(parish_code_6)
+```
+
+
+```{r}
+get_centroids <- function(index) {
+  message("Getting distances from ", index)
+  centroid_i <- list_of_centroids %>% slice(index)
+  pc <- centroid_i %>%
+    pull(parish_code_6) %>%
+    str_c("parish_", .)
+
+  distance <- list_of_centroids %>%
+    st_distance(centroid_i) %>%
+    units::set_units(km) %>%
+    round() %>%
+    as_tibble() %>%
+    rename_with(~ paste0(pc))
+  
+  distance %>% write_rds(glue::glue("data/distance_calcs/{pc}.rds"))
+
+}
+
+# 
+# list_of_centroids %>% 
+#   mutate(rn = row_number()) %>% 
+#   pull(rn) %>% 
+#   walk(get_centroids)
+
+```
+
+
+
+```{r}
+files <- list.files("data/distance_calcs") %>% 
+  as_tibble() %>% 
+  mutate(value = str_c("data/distance_calcs/", value)) %>% 
+  filter(!str_detect(value, "df_distances"))
+
+distances <- files %>% 
+  pull(value) %>% 
+  map_dfc(read_rds)
+
+df_distances <- list_of_centroids %>% bind_cols(distances) %>% 
+  as_tibble() %>% 
+  select(-geometry)
+
+df_distances <- df_distances %>% 
+  pivot_longer(-parish_code_6, values_to = "distance")
+
+df_distances <- df_distances %>% 
+  mutate(parish_to = parse_number(name)) %>% 
+  select(-name)
+
+df_distances <- df_distances %>% 
+  relocate(parish_to, .after = parish_code_6) %>% 
+  arrange(parish_code_6, parish_to) %>% 
+  rename(parish_from = parish_code_6)
+
+# df_distances %>% write_rds("data/distance_calcs/df_distances.rds")
+
+```
+
+So now we have a long table of the distances between each parish centroid.
+
+```{r}
+df_distances %>% 
+  distinct()
+
+df
+```
+
+### Ready to join to original data frame
+
+```{r}
+df <- read.csv(here::here("data", "Folk1930.csv"), sep = "\t")
+
+df <- df %>% as_tibble() %>% 
+  janitor::clean_names()
+```
+
+```{r}
+df_geo <- df %>% 
+  select(id, scbkod, fscbkod) %>% 
+  mutate(fscbkod = as.numeric(fscbkod))
+
+df_geo <- df_geo %>% 
+  left_join(df_distances, by = c("fscbkod" = "parish_from", "scbkod" = "parish_to")) %>% 
+  mutate(distance = as.numeric(distance)) %>% 
+  rename(dist_bp_to_cp_km = distance) %>% 
+  select(id, dist_bp_to_cp_km)
+
+# df_geo %>% write_rds("data/augmented/distance_from_birth_parish_to_current_parish.rds")
+
+```
+
+### What about the scbkod that they have moved in from??
+
+The variable is called inflscb
+
+```{r}
+df_geo_movers <- df %>% 
+  select(id, inflscb, scbkod) %>% 
+  mutate(inflscb = as.numeric(inflscb))
+
+df_geo_movers <- df_geo_movers %>% 
+  left_join(df_distances, by = c("inflscb" = "parish_from", "scbkod" = "parish_to")) %>% 
+  mutate(distance = as.numeric(distance)) %>% 
+  rename(dist_pp_to_cp_km = distance) %>% 
+  select(id, dist_pp_to_cp_km)
+
+# df_geo_movers %>% write_rds("data/augmented/distance_from_previous_parish_to_current_parish.rds")
+```
+
+
+### Now make the matrix of counts of moves
+
+```{r}
+df_scb_codes <- df %>% 
+  dplyr::select(scbkod, fscbkod) %>% 
+  mutate(fscbkod = parse_number(fscbkod))
+```
+
+```{r}
+df_scb_codes_counts <- df_scb_codes %>% 
+  count(scbkod, fscbkod, sort = T) 
+```
+
+Now what we want to do is say for each parish, how many people live in it currently. That we do with summing n by scbkod.
+
+Population by parish
+
+```{r}
+df_scb_total_pops <- df_scb_codes_counts %>% 
+  group_by(scbkod) %>% 
+  summarise(population_total = sum(n)) %>% 
+  arrange(scbkod)
+```
+
+Number of residents not born in parish
+
+```{r}
+df_scb_born_out_of_parish <- df_scb_codes_counts %>% 
+  filter(scbkod != fscbkod) %>% 
+  group_by(scbkod) %>% 
+  summarise(population_born_out_of_parish = sum(n)) %>% 
+  arrange(scbkod)
+```
+
+Join and compare
+
+```{r}
+df_scb_total_pops_joined <- df_scb_total_pops %>% 
+  inner_join(df_scb_born_out_of_parish) %>% 
+  mutate(pct_born_in_parish = 100*(population_total - population_born_out_of_parish)/population_total)
+
+df_scb_total_pops_joined %>% 
+  ggplot(aes(pct_born_in_parish)) +
+  geom_density()
+```
+
+Now think about the small function that calculates the distance for each, weighted by the number of people.
+
+So I want to save some features about this distribution. Including and excluding the zeros?
+
+```{r}
+index <- 248204
+
+df_scb_codes_counts_temp <- df_scb_codes_counts %>%
+  filter(
+    scbkod == index,
+    !is.na(fscbkod)
+  )
+
+df_distances_temp <- df_distances %>%
+  filter(parish_from == index)
+
+df_scb_codes_counts_temp %>%
+  left_join(df_distances_temp, by = c("fscbkod" = "parish_to")) %>%
+  mutate(distance = as.numeric(distance)) %>%
+  select(!parish_from) %>%
+  filter(distance != 0) %>%
+  summarise(
+    p05_dist = quantile(distance, .05),
+    p10_dist = quantile(distance, .1),
+    p25_dist = quantile(distance, .25),
+    p50_dist = quantile(distance, .5),
+    mean_dist = mean(distance),
+    p75_dist = quantile(distance, .75),
+    p90_dist = quantile(distance, .9),
+    p95_dist = quantile(distance, .95),
+  ) %>% 
+  nest(distribution = everything()) %>% 
+  mutate(parish = index)
+
+```
+
+
+```{r}
+index = 158300
+
+get_distributions <- function(index) {
+  message("Getting distributions from ", index)
+
+  df_scb_codes_counts_temp <- df_scb_codes_counts %>%
+    filter(
+      scbkod == index,
+      !is.na(fscbkod)
+    )
+
+  df_distances_temp <- df_distances %>%
+    filter(parish_from == index)
+
+  df_scb_codes_counts_temp %>%
+    left_join(df_distances_temp, by = c("fscbkod" = "parish_to")) %>%
+    mutate(distance = as.numeric(distance)) %>%
+    select(!parish_from) %>%
+    filter(distance != 0) %>%
+    summarise(
+      p05_dist = quantile(distance, .05),
+      p10_dist = quantile(distance, .1),
+      p25_dist = quantile(distance, .25),
+      p50_dist = quantile(distance, .5),
+      mean_dist = mean(distance),
+      p75_dist = quantile(distance, .75),
+      p90_dist = quantile(distance, .9),
+      p95_dist = quantile(distance, .95),
+    ) 
+}
+
+df_scb_codes_counts %>% 
+  slice(3) %>% 
+  pull(scbkod)
+
+
+df_scb_codes_distance_dists <- df_scb_codes_counts %>% 
+  distinct(scbkod) %>% 
+  mutate(dist = map(scbkod, get_distributions))
+```
+
+
+```{r}
+df_scb_codes_distance_dists <- df_scb_codes_distance_dists %>% 
+  unnest(dist) %>% 
+  filter(!is.na(p05_dist))
+
+# df_scb_codes_distance_dists %>% write_rds("data/distances_of_migration.rds")
+```
+
+
+```{r}
+df_scb_codes_distance_dists <- read_rds("data/distances_of_migration.rds")
+
+df_scb_codes_distance_dists %>%
+  slice_sample(n = 12) %>%
+  mutate(scbkod = factor(scbkod)) %>%
+  mutate(scbkod = fct_reorder(scbkod, mean_dist)) %>%
+  pivot_longer(-scbkod) %>%
+  ggplot(aes(value, scbkod, colour = name)) +
+  geom_point() +
+  labs(x = "Distance from parish of birth (km)",
+       y = "Parish code",
+       title = "Distribution of distances from parish of birth",
+       caption = "1930 census")
+```
+
+```{r}
+eps <- read_rds("data/temp/electricity_parishes_1930.rds") %>% 
+  mutate(parish_code = as.numeric(str_remove(parish_code, "[0-9][0-9][0-9]$")))
+
+df_scb_codes_distance_dists_small <- df_scb_codes_distance_dists %>% 
+  inner_join(eps, by = c("scbkod" = "parish_code"))
+
+st_map %>%
+  mutate(parish_code_6 = as.numeric(str_sub(ref_code.x, 4, 9))) %>%
+  inner_join(df_scb_codes_distance_dists, by = c("parish_code_6" = "scbkod")) %>%
+  ggplot(aes(fill = p50_dist)) +
+  geom_sf() +
+  scale_fill_viridis_c() +
+  labs(fill = "Median distance from parish of birth")
+```
+
+
+
+
+
