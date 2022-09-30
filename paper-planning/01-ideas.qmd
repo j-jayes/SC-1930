@@ -1,0 +1,494 @@
+---
+title: "Paper planning for paper 3"
+format:
+    html:
+        code-fold: true
+        code-summary: "Show the code"
+        code-tools: true
+        theme: minty
+---
+
+```{r, include=F}
+knitr::opts_chunk$set(echo = FALSE, warning = F, message = F)
+
+```
+
+
+## Purpose
+
+Planning for the third paper regressions.
+
+## Abstract
+
+What are the effects of technological change on local labour markets? In this paper we seek to answer this question, leveraging a plausibly exogenous technology shock - the connection of the Western Line of the electricity grid between two hydropower stations in Sweden - that provided rural, otherwise unremarkable, parishes a stable and high-quality electricity connection prior to their neighbours. We motivate the exogeneity of this shock by documenting the geographic rollout of the grid through the first half of the 20th century and comparing attributes of the electrified parishes with a control group of parishes, prior to electrification.
+
+We measure two individual-level outcomes nine years after the shock - migration status and income - with Swedish census data from 1930. We use a cross-section of individuals to measure the effect of electrification on the propensity to migrate and on earnings in the new parish for six distinct groups: the combination of a binary indicator for being born in an electricity parish (receiving the treatment) or not, an indicator for living in an electricity parish in 1930 or not, and an indicator for living in your parish of birth or not. Controls include geographic fixed effects, age, gender, and a HISCLASS grouping proxying social class.
+
+Initial findings point to higher levels of migration in electricity parishes than in non-electricity parishes, particularly for prime working-age adults. We find a higher level of income for all individuals who no longer live in their parish of birth, indicating a wage premium for migration. In addition, we find that among those born in electricity parishes, the individuals who left their parish of birth and moved beyond the borders of an electricity parish saw the highest levels of income, on average, of our six groups. This indicates that the shock of electrification lowered the barriers to migration (should we speculate about this?) for individuals receiving the treatment of electrification.
+
+
+## Intro
+
+So far we just want to show the simple things. What has happened for the people who were born in electricity parishes, and then migrate?
+
+
+```{r}
+
+library(tidyverse)
+setwd(here::here())
+
+df <- read_rds("data/augmented/df_1930_augmented.rds")
+
+df <- df %>% 
+  filter(tce_group_250 %in% c("control", "treatment"),
+         adult_1930 == "Adult")
+
+theme_set(theme_light())
+```
+
+```{r}
+df <- df %>% 
+  mutate(female = case_when(
+    kon == "K" ~ 1,
+    kon == "M" ~ 0,
+    TRUE ~ NA_real_
+  ))
+
+df <- df %>% 
+  mutate(hisco_5_fact = case_when(
+    hisco_5 == "Missing" ~ NA_character_,
+    TRUE ~ hisco_5
+  ))
+
+df <- df %>% 
+  mutate(hisco_5_fact = fct_relevel(hisco_5_fact, "Self-employed farmers and fishermen"))
+
+df_reg <- df %>% filter(adult_1930 == "Adult")
+```
+
+
+## Who is in the treatment group?
+
+We have the six groups we are interested in:
+
+If you are born in an electricity parish and still live in your parish of birth.
+
+If you are born in an electricity parish and you moved to a new electricity parish
+
+If you are born in an electricity parish and you moved to a new non-electricity parish.
+
+Born outside electricity parish and still live in parish of birth.
+
+Born outside electricity parish and moved to electricity parish.
+
+Born outside electricity parish and move to non-electricity parish.
+
+### What proportion of the sample is each group?
+
+The table shows that the smallest group are those who moved within the electricity parishes.
+
+The largest group are those who were born outside electricity parishes and moved to another non-electricity parish.
+
+```{r}
+library(gt)
+
+df_reg %>%
+  filter(!is.na(lives_in_parish_of_birth)) %>%
+  group_by(
+    lives_in_parish_of_birth,
+    electricity_parish_born,
+    electricity_parish_living_in
+  ) %>%
+  summarise(
+    n = n(),
+    mean_income = mean(inkomst, na.rm = T)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    lives_in_parish_of_birth = case_when(
+      lives_in_parish_of_birth == 1 ~ "Lives in parish of birth",
+      TRUE ~ "Lives outside parish of birth"
+    ),
+    electricity_parish_born = ifelse(electricity_parish_born == 1,
+      "Born in electricity parish",
+      "Born outside electricity parish"
+    ),
+    electricity_parish_living_in = ifelse(electricity_parish_living_in == 1,
+      "Lives in electricity parish",
+      "Lives outside electricity parish"
+    )
+  ) %>%
+  mutate(label = str_c(lives_in_parish_of_birth, " and ", electricity_parish_born, " and ", electricity_parish_living_in)) %>%
+  mutate(pct_share = n / sum(n)) %>%
+  select(label, n, pct_share, mean_income) %>%
+  arrange(n) %>%
+  gt() %>%
+  fmt_number(decimals = 0, columns = n) %>%
+  fmt_percent(decimals = 2, columns = pct_share) %>%
+  fmt_currency(columns = mean_income, currency = "SEK", decimals = 0) %>%
+  cols_label(
+    label = "",
+    n = "Number in sample",
+    pct_share = "Percentage of sample",
+    mean_income = "Mean income"
+  ) %>%
+  tab_header(
+    title = md("Sample makeup"),
+    subtitle = md("By place of birth and place of habitation in 1930")
+  )
+
+
+```
+
+HISCO classifications for those who were born in electricity parishes and moved
+
+```{r}
+df_movers_out <- df %>%
+  filter(
+    electricity_parish_born == 1,
+    electricity_parish_living_in == 0
+  ) %>%
+  count(hisco_5) %>%
+  filter(hisco_5 != "Missing") %>%
+  mutate(group = "Movers out of electricity parishes")
+
+df_movers_in <- df %>%
+  filter(
+    electricity_parish_born == 0,
+    electricity_parish_living_in == 1
+  ) %>%
+  count(hisco_5) %>%
+  filter(hisco_5 != "Missing") %>%
+  mutate(group = "Movers into of electricity parishes")
+```
+
+## What is the occupational group breakdown for two groups of interest?
+
+We can see that the groups are largely similar, and that those who moved out of electricity parishes had slightly more lower middle class and elites than those who moved into electricity parishes.
+
+```{r}
+#| column: page
+
+df_movers_out %>%
+  bind_rows(df_movers_in) %>%
+  ggplot(aes(x = group, y = n, fill = hisco_5)) +
+  geom_col(position = "fill") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    x = NULL,
+    y = "Share of inhabitants",
+    fill = "Occupational group"
+  )
+```
+
+
+```{r}
+df_movers_out <- df %>%
+  filter(
+    electricity_parish_born == 1,
+    electricity_parish_living_in == 0
+  ) %>%
+  mutate(group = "Movers out of electricity parishes")
+
+df_movers_in <- df %>%
+  filter(
+    electricity_parish_born == 0,
+    electricity_parish_living_in == 1
+  ) %>%
+  mutate(group = "Movers into electricity parishes")
+
+df_stayers_in <- df %>%
+  filter(
+    electricity_parish_born == 1,
+    electricity_parish_living_in == 1
+  ) %>%
+  mutate(group = "Stayers in electricity parishes")
+
+df_stayers_out <- df %>%
+  filter(
+    electricity_parish_born == 0,
+    electricity_parish_living_in == 0
+  ) %>%
+  mutate(group = "Stayers in other parishes")
+
+
+df_plot <- df_movers_out %>% 
+  bind_rows(df_movers_in) %>% 
+  bind_rows(df_stayers_in) %>% 
+  bind_rows(df_stayers_out)
+```
+
+## Income distributions by migrant status and occupational group
+
+When comparing the distributions of income by migrant status and occupational groups we can see that your occupational group has a higher correlation with income than your migratory status. It is also possible to see that movers have on average higher median incomes than stayers. Further, we see that among stayers in the top of the income distribution (elites and lower middle class) other parishes have higher incomes than electricity parishes, but that this is reversed at the bottom of the income distrbution (skilled workers and unskilled and farm workers). 
+
+```{r}
+#| column: page
+
+df_plot %>% 
+  filter(hisco_5 != "Missing") %>%
+  ggplot(aes(log(inkomst), fill = group)) +
+  geom_boxplot(alpha = .5, outlier.alpha = .1) +
+  facet_wrap(~hisco_5, nrow = 5) +
+  scale_fill_brewer(palette = "Dark2") +
+  labs(
+    x = "Log income",
+    fill = "Group",
+    title = "Distribution of income by migratory status and occupational group"
+  )
+```
+
+
+## Regressions
+
+So let us see if this is the case once we control for some more factors, through regression analysis.
+
+### Is there a return to migration in terms of income?
+
+To answer this question we have to look at the both the evidence on average and at the margin.
+
+First we use a linear regression to assess if living in your parish of birth has an impact on your income in 1930, controlling for occupational group, age, and gender.
+
+The regression output below shows that the living in your parish of birth is associated with a decrease in income of 367 kronor, significant at the one percent level. In terms of magnitude, this is about 43% of the gender wage gap, and or 37% of the median income (1000kr). The effect is large in magnitude, indicating that there is probably a selection effect such that those who leave their parish of birth do so in part because they expect to find higher returns to their skills in a geographically different labour market.
+
+```{r}
+library(gtsummary)
+
+reg_out <- lm(inkomst ~ lives_in_parish_of_birth + hisco_5_fact + age + female, data = df_reg)
+
+reg_out %>% gtsummary::tbl_regression() %>% 
+  add_significance_stars() %>% 
+  add_n()
+```
+
+In the second regression we look at the effect of the distance between your parish of birth and your parish of inhabitance in 1930, in kilometers. The coefficient is positive at 2.6, and is significant at the 1 percent level. This indicates a positive return to migration.
+
+```{r}
+reg_out <- lm(inkomst ~ dist_bp_to_cp_km + hisco_5_fact + age + female, data = df_reg)
+
+reg_out %>% gtsummary::tbl_regression() %>% 
+  add_significance_stars() %>% 
+  add_n()
+```
+
+
+```{r}
+df_magnitude <- df_reg %>%
+  summarise(
+    mean_dist_bp_to_cp_km = mean(dist_bp_to_cp_km, na.rm = T),
+    median_dist_bp_to_cp_km = median(dist_bp_to_cp_km, na.rm = T),
+    median_income = median(inkomst, na.rm = T)
+  )
+
+estimate <- reg_out %>% 
+  broom::tidy() %>% 
+  filter(term == "dist_bp_to_cp_km") %>% 
+  pull(estimate)
+
+library(gt)
+```
+
+To determine the effect at the median and mean distances of migration, we multiply this coefficient by 112 km (the mean) and 25 km (the median), and divide the effect by the median income to interpret the effect as a percentage of the median income. This is shown as a positive return of 11 percent of the median income at the mean distance of migration from birth parish, and 2.6 percent at the median migration distance of 25km. 
+
+```{r}
+#| column: page
+
+df_magnitude %>%
+  pivot_longer(-median_income) %>%
+  mutate(
+    estimate = estimate,
+    effect_kr = value * estimate,
+    effect_as_pct_median_income = effect_kr / median_income
+  ) %>%
+  select(name, effect_kr, effect_as_pct_median_income) %>%
+  gt::gt() %>%
+  fmt_percent(columns = effect_as_pct_median_income) %>%
+  fmt_currency(columns = effect_kr, decimals = 0, currency = "SEK")
+
+
+```
+
+
+## Places of migration for the different people born in different places
+
+What is the distribution of migration distance by parish of birth and occupational grouping?
+
+```{r}
+#| column: page
+
+df_reg %>%
+  filter(!is.na(hisco_5_fact)) %>%
+  ggplot(aes(dist_bp_to_cp_km, fill = factor(electricity_parish_born))) +
+  geom_density(alpha = .5) +
+  scale_x_log10() +
+  labs(
+    x = "Distance from birth parish to current parish (km)",
+    fill = "Born in electricity parish"
+  ) +
+  scale_fill_brewer(palette = "Dark2") +
+  facet_wrap(~hisco_5_fact, nrow = 5) +
+  theme(legend.position = "right")
+```
+
+### What does this look like by group at the mean and median?
+
+So it seems as if those born outside electricity parishes migrate further, on average and at the median.
+
+```{r}
+#| column: page
+
+df_reg %>%
+  filter(!is.na(hisco_5_fact)) %>%
+  group_by(
+    electricity_parish_born,
+    hisco_5_fact
+  ) %>%
+  summarise(
+    mean_dist_bp_to_cp_km = mean(dist_bp_to_cp_km, na.rm = T),
+    median_dist_bp_to_cp_km = median(dist_bp_to_cp_km, na.rm = T)
+  ) %>%
+  ungroup() %>%
+  pivot_wider(names_from = electricity_parish_born, values_from = c("mean_dist_bp_to_cp_km", "median_dist_bp_to_cp_km")) %>%
+    gt::gt() %>%
+    fmt_number(decimals = 2, columns = -hisco_5_fact) %>%
+    cols_label(
+      hisco_5_fact = "",
+      mean_dist_bp_to_cp_km_0 = "Outside Electricity Parish",
+      mean_dist_bp_to_cp_km_1 = "Inside Electricity Parish",
+      median_dist_bp_to_cp_km_0 = "Outside Electricity Parish",
+      median_dist_bp_to_cp_km_1 = "Inside Electricity Parish"
+    ) %>%
+    tab_spanner(
+      label = "Mean distance",
+      columns = c(
+        mean_dist_bp_to_cp_km_0, mean_dist_bp_to_cp_km_1
+      )
+    ) %>%
+    tab_spanner(
+      label = "Median distance",
+      columns = c(
+        median_dist_bp_to_cp_km_0, median_dist_bp_to_cp_km_1
+      )
+    ) %>%
+    tab_header(
+      title = md("Distances of migration"),
+      subtitle = md("By place of birth and occupational class")
+    )
+  
+```
+
+### Regression of distance of migration by place of birth
+
+```{r}
+reg_out <- lm(dist_bp_to_cp_km ~ electricity_parish_born + hisco_5_fact + age + female, data = df_reg)
+
+reg_out_2 <- lm(dist_pp_to_cp_km ~ electricity_parish_born + hisco_5_fact + age + female, data = df_reg)
+
+reg_out <- reg_out %>%
+  gtsummary::tbl_regression() %>%
+  add_significance_stars() %>%
+  add_n()
+
+reg_out_2 <- reg_out_2 %>% 
+    gtsummary::tbl_regression() %>%
+  add_significance_stars() %>%
+  add_n()
+
+tbl_merge(tbls = list(reg_out, reg_out_2))
+
+```
+
+Do people born in electricity parishes see a higher return to migration the same distance?
+
+So we want to run a regression where income is dep var, and indepvar of interest is electricity_parish_born
+
+```{r}
+reg_out <- lm(inkomst ~ electricity_parish_born + dist_bp_to_cp_km + hisco_5_fact + age + female, data = df_reg)
+
+reg_out %>%
+  gtsummary::tbl_regression() %>%
+  add_significance_stars() %>%
+  add_n()
+```
+
+Map of their migrations by social class
+
+```{r}
+library(sf)
+setwd(here::here())
+
+
+st_map <- read_rds("data/st_map.rds") %>% 
+  mutate(scbkod = as.numeric(ref_code_char)) %>% 
+  st_transform(crs = 4326)
+  
+df_map <- st_map %>% 
+  inner_join(df_reg %>%
+  filter(
+    electricity_parish_born == 1,
+    lives_in_parish_of_birth == 0
+  ) %>%
+  count(scbkod))
+
+library(leaflet)
+  
+bins <- c(0, 10, 20, 50, 100, 200, 500, 1000, Inf)
+pal <- colorBin("viridis", domain = df_map$n, bins = bins)
+
+labels <- sprintf(
+  "<strong>%s</strong><br/>%.0f Number of people moving from electricity parishes",
+  df_map$name, df_map$n
+) %>% lapply(htmltools::HTML)
+```
+
+
+```{r}
+#| column: page
+
+
+leaflet() %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolygons(
+    data = df_map,
+    fillColor = ~ pal(n),
+    weight = 2,
+    opacity = 1,
+    color = "white",
+    dashArray = "3",
+    fillOpacity = 0.7,
+    highlightOptions = highlightOptions(
+      weight = 5,
+      color = "#666",
+      dashArray = "",
+      fillOpacity = 0.7,
+      bringToFront = TRUE
+    ),
+    popup = labels,
+  ) %>%
+  addLegend("bottomright",
+    pal = pal, values = df_map$n,
+    title = "Number of people moving from electricity parishes"
+  )
+
+```
+
+
+
+```{r}
+# df %>%
+#   filter(adult_1930 == "Adult") %>%
+#   group_by(type_born, migrant) %>%
+#   summarise(mean_income = round(mean(inkomst, na.rm = T))) %>%
+#   ungroup() %>%
+#   ggplot(aes(type_born, migrant)) +
+#   geom_tile(aes(fill = mean_income)) +
+#   geom_label(aes(label = mean_income)) +
+#   labs(
+#     title = "Mean income",
+#     subtitle = "By parish of birth type",
+#     x = "Parish type which individuals were born in",
+#     y = "Left parish of birth?"
+#   )
+```
+
+Maybe we need to think about the group that comes in 
