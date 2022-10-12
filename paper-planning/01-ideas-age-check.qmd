@@ -14,6 +14,109 @@ knitr::opts_chunk$set(echo = FALSE, warning = F, message = F)
 ```
 
 
+## Notes from Anders
+
+fd - före detta - ex - job title. 
+
+Åboänka Undantagsman (farmer and then does something else = Åbo can stay on the farm - they have the right)
+
+Accidenstryckare who prints advertising and such - not newspapers, not books. Commercial papers. Forms. 
+
+Ackumulatorarbetare - energy storage device worker
+
+förman is a supervisor. Arbetare is just a worker. biträde is an assistant. 
+
+Ackuschörska - förlossnings­läkare - somewhere between midwife and a doctor
+
+Adjunkt - teacher but higher. 
+
+ägare is owner.  Direktör is md.
+
+Affärsman  - businessman.order
+
+Grosshandelsrörelse - merchant.
+
+Ägare Änka Undantag - Undantag - you have the right to stay on part of your property - you make a contract. As previous owner you can do it with your children - or someone else. 
+
+Arrendator - tennant farmer usually, could be tennant of something else.
+
+innehaverska - 
+
+Affärsinnehaverska - owns a shop. takes care of a shop. innehaverska just means she runs the establisment.
+
+Innehavare - male form of a 
+
+änka is a widow
+änkling (widower)
+
+frånskild is divorced
+
+i faderns affär - in fathers shop
+
+Konsum - coop
+
+mjölkcentral - where you make cheese and cream and butter.
+
+Speceri - groceries
+
+Utan anställning - without employment
+
+ f.n. - just now. för närvarande
+ 
+havarinna vs havarska. innehavarinna is the never form of innehaverska
+
+House owner is the default title if you didn't own anything else.
+
+Gjutare - factory worker who casts.
+
+Rättare  - one who supervises a farm. a bigger farm.
+
+Handlande - remove ägare 
+
+A number contain  f.d. showing they used to be somehing.
+
+Hönsskötsel - takes care of the chickens.
+
+Järnarbetare - steelworker.
+
+Järnvägsarbetare - railway worker.
+
+Kapitalist - someone who lives on their own money. they don't have to work.
+
+Agronom - farmer but with higher education.
+
+Some are a mix between profession or marital status.
+
+Separate these out.
+
+Think about the transitions
+
+Fattighjon Hemmansägaredotter f.d. - should exclude the second part.
+
+extra and  e.o. mean extraordinarium - a government official. 
+
+### What can these mean?
+
+ag. is agent. people who are out selling things. travelling salesperson. 
+No - it could be agare - an owner.
+
+You cannot be Kaféidkare ag. as agent. it must be owner.
+
+Grosshandlare ag. must be a business owner. 
+
+Hemmansägare ag. should not be possible. 
+
+Arrendator ag. is a tennant farmer. So ag. is wrong - "quite wrong, everything" 
+
+Livförsäkringsagent - life insurance agent.
+
+### University titles
+
+Fil. kand. 
+Fil. lic
+
+M. V. -- Mekanisk Verkstad
+
 ## Purpose
 
 Planning for the third paper regressions.
@@ -25,6 +128,43 @@ What are the effects of technological change on local labour markets? In this pa
 We measure two individual-level outcomes nine years after the shock - migration status and income - with Swedish census data from 1930. We use a cross-section of individuals to measure the effect of electrification on the propensity to migrate and on earnings in the new parish for six distinct groups: the combination of a binary indicator for being born in an electricity parish (receiving the treatment) or not, an indicator for living in an electricity parish in 1930 or not, and an indicator for living in your parish of birth or not. Controls include geographic fixed effects, age, gender, and a HISCLASS grouping proxying social class.
 
 Initial findings point to higher levels of migration in electricity parishes than in non-electricity parishes, particularly for prime working-age adults. We find a higher level of income for all individuals who no longer live in their parish of birth, indicating a wage premium for migration. In addition, we find that among those born in electricity parishes, the individuals who left their parish of birth and moved beyond the borders of an electricity parish saw the highest levels of income, on average, of our six groups. This indicates that the shock of electrification lowered the barriers to migration (should we speculate about this?) for individuals receiving the treatment of electrification.
+
+### Separating
+
+How do we manage the splitting up of the occupation column?
+
+1. Split it into a former profession and current.
+
+2. Start with the most common phrases
+
+Distinction between husband's occupaton and wifes. 
+
+How many columns?
+
+```{r}
+df %>% 
+  mutate(yrke_new = yrke,
+            yrke_n = str_count(yrke_new, " ")) %>% 
+  count(yrke_n, sort = T)
+
+library(tidytext)
+
+df_word <- df %>% 
+  unnest_tokens(word, yrke)
+
+df_word %>% 
+  count(word, sort = T) %>% 
+  head(40) %>% 
+  mutate(word = fct_reorder(word, n)) %>% 
+  ggplot(aes(n, word, fill = n)) +
+  geom_col()
+
+df %>% 
+  filter(str_detect(yrke, " s e")) %>% 
+  select(yrke) %>% view()
+
+df %>% filter(str_detect(yrke, "Handlande s e.")) %>% view()
+```
 
 
 ## Intro
@@ -38,6 +178,10 @@ library(tidyverse)
 setwd(here::here())
 
 df <- read_rds("data/augmented/df_1930_augmented.rds")
+
+# How many adults are there in 1930?
+df %>% count(adult_1930)
+
 
 df <- df %>% 
   filter(tce_group_250 %in% c("control", "treatment"),
@@ -162,6 +306,63 @@ df_movers_in <- df %>%
   mutate(group = "Movers into of electricity parishes")
 ```
 
+## Who has the steepest age gradient in income
+
+```{r}
+library(geomtextpath)
+
+order <- df_reg %>%
+  filter(!is.na(hisco_5_fact)) %>% 
+  # slice_sample(n = 10000, weight_by = hisco_5_fact) %>% 
+  ggplot(aes(age, inkomst, colour = hisco_5_fact)) +
+  # geom_point(alpha = .5) +
+	geom_labelsmooth(aes(label = hisco_5_fact), se = F, alpha = .7, cex = 8) +
+  scale_x_continuous(limits = c(NA, 90)) +
+  scale_y_log10(labels = scales::number_format()) +
+  theme(legend.position = "none") +
+  labs(x = "Age in years",
+       y = "Income in SEK (log scale)")
+
+order
+```
+
+Now I want to see when the downturn happens?
+
+```{r}
+df_reg %>%
+  filter(!is.na(hisco_5_fact)) %>%
+  group_by(hisco_5_fact, age) %>%
+  summarise(mean_income = mean(inkomst, na.rm = T)) %>%
+  ggplot(aes(age, mean_income, colour = hisco_5_fact)) +
+  geom_point() +
+  geom_smooth(se = F) +
+  scale_x_continuous(limits = c(NA, 90))
+
+
+```
+
+I have a problem. Unskilled workers earn more than skilled workers until age 60. Why?
+
+Let's check what the most common occupations are within each group? Maybe the skilled workers are categorised wrong?
+
+```{r}
+library(tidytext)
+
+df_reg %>% 
+  filter(!is.na(hisco_5_fact)) %>% 
+  group_by(hisco_5_fact) %>% 
+  count(yrke) %>% 
+  slice_max(n, n = 12) %>% 
+  ungroup() %>% 
+  mutate(yrke = reorder_within(yrke, n, hisco_5_fact)) %>% 
+  ggplot(aes(n, yrke, fill = hisco_5_fact)) +
+  geom_col(show.legend = F) +
+  facet_wrap(~ hisco_5_fact, scales = "free_y") +
+  scale_y_reordered()
+```
+
+
+
 ## What is the occupational group breakdown for two groups of interest?
 
 We can see that the groups are largely similar, and that those who moved out of electricity parishes had slightly more lower middle class and elites than those who moved into electricity parishes.
@@ -243,6 +444,8 @@ df_plot %>%
 
 So let us see if this is the case once we control for some more factors, through regression analysis.
 
+In addition we want to check whether the trimming of the sample based on age has an effect.
+
 ### Is there a return to migration in terms of income?
 
 To answer this question we have to look at the both the evidence on average and at the margin.
@@ -253,11 +456,13 @@ The regression output below shows that the living in your parish of birth is ass
 
 ```{r}
 library(gtsummary)
+library(gt)
 
 reg_out <- lm(inkomst ~ lives_in_parish_of_birth + hisco_5_fact + age + female, data = df_reg)
 
-reg_out %>% gtsummary::tbl_regression() %>% 
-  add_significance_stars() %>% 
+reg_out %>%
+  gtsummary::tbl_regression() %>%
+  add_significance_stars() %>%
   add_n()
 ```
 
@@ -285,7 +490,6 @@ estimate <- reg_out %>%
   filter(term == "dist_bp_to_cp_km") %>% 
   pull(estimate)
 
-library(gt)
 ```
 
 To determine the effect at the median and mean distances of migration, we multiply this coefficient by 112 km (the mean) and 25 km (the median), and divide the effect by the median income to interpret the effect as a percentage of the median income. This is shown as a positive return of 11 percent of the median income at the mean distance of migration from birth parish, and 2.6 percent at the median migration distance of 25km. 
@@ -492,3 +696,201 @@ leaflet() %>%
 ```
 
 Maybe we need to think about the group that comes in 
+
+
+### Checking for information in other columns
+
+```{r}
+df %>% 
+  select(yrke, hushtyp:biyrkkod) %>% view()
+```
+
+## Is it good to cut off age at 18?
+
+What are the age distributions of the most common occupational titles
+
+The dataframe below is all from df_augmented
+
+```{r}
+common_occs <- df %>% 
+  filter(yrke != "") %>% 
+  count(yrke, sort = T)
+
+common_occs_small <- common_occs %>% 
+  slice_max(order_by = n, n = 19) %>% 
+  bind_rows(tibble(yrke = "Piga", n = 1))
+
+df_age_dists <- df %>% 
+  filter(yrke %in% common_occs_small$yrke)
+
+df_age_dists %>%
+  # mutate(yrke = fct_reorder(yrke, n)) %>% 
+  ggplot(aes(age, fill = yrke)) +
+  geom_density(show.legend = F) +
+  geom_vline(xintercept = 15, lty = 2) +
+  geom_vline(xintercept = 18, lty = 1) +
+  facet_wrap(~yrke, scales = "free_y") +
+  coord_cartesian(xlim = c(0, 60)) +
+  labs(x = "Age",
+       y = "Density of age by occupation")
+```
+
+
+```{r}
+df_age_dists %>%
+  count(yrke, age) %>% 
+  ggplot(aes(age, n, fill = yrke)) +
+  geom_col(show.legend = F) +
+  geom_vline(xintercept = 15, lty = 2) +
+  geom_vline(xintercept = 18, lty = 1) +
+  facet_wrap(~yrke, scales = "free_y") +
+  coord_cartesian(xlim = c(0, 60)) +
+  labs(x = "Age",
+       y = "Number age by occupation")
+```
+
+15 is a good point to cut off age.
+
+### Clustering together occupations
+
+Steps for making the occupational strings shorter.
+
+First, flagging f.d.
+
+Next, place of work.
+
+Next, fn.
+
+f. could mean före detta or född - this is a problem - we need to come back to it.
+
+Final column - that keeps everything we want to remove, e.g. s. e. or n:r 17 etc.
+
+If the occupation ends in f. or f.d. or any of the other combinations - take the previous word for former occupations and put that in an additional column. - if there are two words before. Otherwise, just remove f.d. 
+
+
+Next - änka and such.c And the 45 instances of "i". "hyr", "har", "förste", "med"
+
+replace abbreviations with the full word, e.g. Med. as Medicine. 
+
+Filisophie - Fil. - and that filosophie on it's own should not be done.
+
+
+
+```{r}
+common_occs %>% 
+  filter(str_detect(yrke, "fd"))
+
+# example for counting words
+# we want to count the number of occupations: must be word, not f.d.
+
+
+common_occs %>%
+  mutate(
+    yrke_copy = yrke,
+    flag_for_multi_occs = ifelse(
+      str_detect(
+        yrke,
+        "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$"
+      ) &
+        str_detect(yrke, " [A-Z].*"), yes = TRUE, no = FALSE
+    )
+  ) %>%
+  mutate(
+    yrke_clean = str_squish(str_remove(yrke, "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$")),
+    yrke_f_occ = case_when(
+      flag_for_multi_occs == TRUE ~ word(yrke_clean, -1),
+      TRUE ~ NA_character_
+    ),
+    yrke = case_when(
+      flag_for_multi_occs == TRUE ~ str_remove(yrke, " .*"),
+      TRUE ~ yrke
+    )
+  ) %>%
+  select(-yrke_clean)
+
+```
+
+
+```{r}
+common_occs_trimmed <- common_occs %>%
+  mutate(
+    # this makes a copy of the original column, that we then modify
+    yrke_copy = yrke,
+    # We create a column for former, indicated by fd. We remove this from the original column.
+
+    flag_fd = ifelse(str_detect(yrke, "f\\.d\\.|f\\.d|^fd| fd|f d\\.| f\\. d\\.|f\\. d$"),
+      TRUE, FALSE
+    ),
+    yrke = str_remove_all(yrke, "f\\.d\\.|f\\.d|^fd| fd|f d\\.| f\\. d\\.|f\\. d$"),
+    # fn
+    flag_fn = ifelse(str_detect(yrke, "f\\.n\\.|f\\. n\\.|f\\. n"),
+      TRUE, FALSE
+    ),
+    yrke = str_remove_all(yrke, "f\\.n\\.|f\\. n\\.|f\\. n"),
+
+
+    # create a column for place of work
+    yrke_pow = str_extract(yrke, " hos .*| vid .*| i .*| på.*| å .*| h\\. "),
+    # remove this from yrke
+    yrke = str_remove_all(yrke, " hos .*| vid .*| i .*| på.*| å .*| h\\. "),
+
+    # f.
+    yrke_f_occ = str_extract(yrke, " f\\..*"),
+    yrke = str_remove_all(yrke, " f\\..*")
+  ) %>%
+    mutate(
+      flag_for_multi_occs = ifelse(
+        str_detect(
+          yrke,
+          "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$"
+        ) &
+          str_detect(yrke, " [A-Z].*"), yes = TRUE, no = FALSE
+      )
+    ) %>%
+    mutate(
+      yrke_clean = str_squish(str_remove(yrke, "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$")),
+      yrke_f_occ = case_when(
+        flag_for_multi_occs == TRUE ~ word(yrke_clean, -1),
+        TRUE ~ NA_character_
+      ),
+      yrke = case_when(
+        flag_for_multi_occs == TRUE ~ str_remove(yrke, " .*"),
+        TRUE ~ yrke
+      )
+    ) %>%
+    select(-yrke_clean) %>% 
+  mutate(yrke = str_remove_all(yrke, "[:punct:]"),
+         yrke = str_to_lower(yrke),
+         yrke = str_squish(yrke)) %>% 
+  mutate(yrke_1 = word(yrke, 1))
+
+common_occs_trimmed %>% 
+  count(yrke_1, sort = T) %>% view()
+
+common_occs_trimmed %>% 
+  filter(str_detect(yrke_1, "^med$")) %>% view()
+```
+
+
+```{r}
+df %>% filter(str_detect(yrke, "f\\.d\\.$")) %>% select(yrke) %>% view()
+
+df %>% 
+  filter(
+    kon == "K",
+         # civ == "G",
+         str_detect(yrke, "f\\. [A-Z]")) %>% view()
+
+df %>% filter(str_detect(yrke, ",")) %>% view()
+
+df %>% 
+  filter(str_detect(yrke, " å ")) %>% select(yrke) %>% head(500) %>% view()
+
+df %>% 
+  filter(str_detect(yrke, "Hemmansägare f.")) %>% select(yrke) %>% head(200) %>% view()
+
+common_occs %>% head(100) %>% view()
+```
+
+
+

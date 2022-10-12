@@ -1,0 +1,197 @@
+---
+title: "Untitled"
+format: html
+---
+
+## Purpose
+
+Cleaning up the occupational colmn in the census data.
+
+For CIV -
+
+G is gift - marrid
+O is ogift - unmarried
+E is widow or widower
+X is divorced (on the basis of investigating different people)
+U is in the unknown book - there are just 67 of them. 
+
+hos 
+vid 
+f.d. former
+
+What should we put in each column
+
+Widow - former, 
+
+If missing - check the column ovf_obef_ar
+
+### Notes
+
+
+fd - före detta - ex - job title. 
+
+Åboänka Undantagsman (farmer and then does something else = Åbo can stay on the farm - they have the right)
+
+Accidenstryckare who prints advertising and such - not newspapers, not books. Commercial papers. Forms. 
+
+Ackumulatorarbetare - energy storage device worker
+
+förman is a supervisor. Arbetare is just a worker. biträde is an assistant. 
+
+Ackuschörska - förlossnings läkare - somewhere between midwife and a doctor
+
+Adjunkt - teacher but higher. 
+
+ägare is owner.  Direktör is md.
+
+Affärsman  - businessman.
+
+Grosshandelsrörelse - merchant.
+
+Ägare Änka Undantag - Undantag - you have the right to stay on part of your property - you make a contract. As previous owner you can do it with your children - or someone else. 
+
+Arrendator - tennant farmer usually, could be tennant of something else.
+
+innehaverska - 
+
+Affärsinnehaverska - owns a shop. takes care of a shop. innehaverska just means she runs the establisment.
+
+Innehavare - male form of a 
+
+änka is a widow
+änkling (widower)
+
+frånskild is divorced
+
+i faderns affär - in fathers shop
+
+Konsum - coop
+
+mjölkcentral - where you make cheese and cream and butter.
+
+Speceri - groceries
+
+Utan anställning - without employment
+
+ f.n. - just now. för närvarande
+ 
+havarinna vs havarska. innehavarinna is the never form of innehaverska
+
+House owner is the default title if you didn't own anything else.
+
+Gjutare - factory worker who casts.
+
+Rättare  - one who supervises a farm. a bigger farm.
+
+Handlande - remove ägare 
+
+A number contain  f.d. showing they used to be somehing.
+
+Hönsskötsel - takes care of the chickens.
+
+Järnarbetare - steelworker.
+
+Järnvägsarbetare - railway worker.
+
+Kapitalist - someone who lives on their own money. they don't have to work.
+
+Agronom - farmer but with higher education.
+
+Some are a mix between profession or marital status.
+
+Separate these out.
+
+Think about the transitions
+
+Fattighjon Hemmansägaredotter f.d. - should exclude the second part.
+
+
+### What is a good way to do this? Look for the most common parts of the occupational descriptions.
+
+```{r}
+library(tidyverse)
+library(tidytext)
+
+parts <- df_reg %>% 
+  select(yrke) %>% 
+  distinct()
+
+parts
+
+```
+
+
+
+What does the classification of occupations look like from the original census
+
+```{r}
+df_reg
+
+df_reg %>% 
+  count(yrkkod, sort = T) %>% view()
+
+df_reg %>% 
+  count(yrke, yrkkod)
+
+df_reg %>% 
+  filter(yrkkod == "1.2") %>% view()
+
+df_reg %>% 
+  filter(yrkkod == "") %>% 
+  count(yrke, sort = T)
+
+df_reg %>% 
+  filter(yrke == "Hembiträde") %>% 
+  count(yrkkod, sort = T)
+
+df_reg %>%
+  filter(yrkkod == "3.2") %>% 
+  select(yrke)
+
+df_reg %>% 
+  filter(str_detect(yrke, "handlare")) %>% 
+  count(yrkkod, sort = T)
+
+df_reg %>% 
+  filter(yrkkod == "2.A.4") %>% 
+  select(yrke) %>% distinct()
+```
+
+Qestion: how does 2.D.12 differ from 2.D.27
+
+```{r}
+
+df_reg %>%
+  filter(yrkkod %in% c("2.D.12", "2.D.27")) %>%
+  select(yrke, yrkkod) %>%
+  count(yrkkod, yrke, sort = T)
+
+```
+
+
+
+```{r}
+df_reg %>%
+  filter(str_detect(yrkkod, "1.14")) %>%
+  select(yrke) %>%
+  distinct()
+
+df_reg %>%
+  filter(str_detect(yrkkod, "4.25")) %>%
+  select(yrke)
+
+df_reg %>% 
+  filter(str_detect(yrke, "Badmästare")) %>% 
+  count(yrkkod)
+```
+
+
+Let's check for how many specific occupational strings there are different occupational codes
+
+```{r}
+df_reg %>% 
+  group_by(yrke) %>% 
+  count(yrkkod, sort = T)
+
+```
+
