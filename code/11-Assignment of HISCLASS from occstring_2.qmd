@@ -106,6 +106,25 @@ Think about the transitions
 Fattighjon Hemmansägaredotter f.d. - should exclude the second part.
 
 
+### Divorced
+
+frsk as frånskild 
+
+### Dairy
+
+Mejerinna - Mejerist is a man who works in a dairy. This is the female. She is above the jungfru and the elev of the same.
+
+### A stall by the road
+
+Bod like bodgumma. a tent at which you sell something. 
+
+Restautantrice - a french word for a lady who runs a restaurant. 
+
+### Pappersbruk
+
+There are lots of specific titles within the paper mill. Maybe have a look at them separetly. 
+
+
 ### What is a good way to do this? Look for the most common parts of the occupational descriptions.
 
 ```{r}

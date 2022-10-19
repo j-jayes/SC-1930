@@ -15,6 +15,25 @@ library(tidyverse)
 occstrings_1910 <- read_rds("data/OCCSTRING_lookup.rds") %>% 
   rename(hisco = OCCHISCO,
          occ_string_1910 = OCCSTRNG)
+
+occstrings_1910_grouped <- occstrings_1910 %>% 
+  group_by(occ_string_1910) %>% 
+  count(hisco) %>% 
+  ungroup()
+
+occstrings_1910 %>% 
+  filter(hisco == "99999") %>% view()
+
+occstrings_1910 %>% 
+  filter(str_detect(occ_string_1910, "Byggmästare"))
+
+occstrings_1910_grouped %>% 
+  arrange(desc(n))
+
+occstrings_1910 %>% 
+  mutate(yrke_count_spaces = str_count(occ_string_1910, " ")) %>% 
+  filter(yrke_count_spaces == 0) %>% head(500) %>% 
+  
 ```
 
 
@@ -199,4 +218,8 @@ hisco_hisclass_lookup %>%
 df %>% 
   inner_join(hisco_hisclass_lookup, by = c("hisco" = "HISCO"))
 ```
+
+
+
+
 

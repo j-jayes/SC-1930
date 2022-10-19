@@ -59,7 +59,7 @@ mjölkcentral - where you make cheese and cream and butter.
 
 Speceri - groceries
 
-Utan anställning - without employment
+Utan anställning - without employment equally u.a.
 
  f.n. - just now. för närvarande
  
@@ -114,8 +114,39 @@ Livförsäkringsagent - life insurance agent.
 
 Fil. kand. 
 Fil. lic
+Fil. mag. 
+Fil. doktor
+
+or in one instance dr. Phil
+
+Teol. or Teologie or Tekn. kand
+
+Ek for ekonomie
+
+Ing for ingenjör - Civil ingenjör
+
+docent 
+
+All combinations of these for the different faculties. 
+
+Universitetsdocent
+
+
 
 M. V. -- Mekanisk Verkstad
+
+
+
+
+### Title
+
+K. for Kungliga - for royal worker of some sort.
+
+
+### Part of a e.g. farm or shop
+
+Begins with "Del"
+Delägare
 
 ## Purpose
 
@@ -717,7 +748,7 @@ common_occs <- df %>%
   count(yrke, sort = T)
 
 common_occs_small <- common_occs %>% 
-  slice_max(order_by = n, n = 19) %>% 
+  slice_max(order_by = n, n = 11) %>% 
   bind_rows(tibble(yrke = "Piga", n = 1))
 
 df_age_dists <- df %>% 
@@ -732,7 +763,8 @@ df_age_dists %>%
   facet_wrap(~yrke, scales = "free_y") +
   coord_cartesian(xlim = c(0, 60)) +
   labs(x = "Age",
-       y = "Density of age by occupation")
+       y = "Density of age by occupation",
+       caption = "Note: dotted line is age 15, solid line is age 18")
 ```
 
 
@@ -774,7 +806,24 @@ replace abbreviations with the full word, e.g. Med. as Medicine.
 
 Filisophie - Fil. - and that filosophie on it's own should not be done.
 
+## Widows:
 
+Änka efter etc
+
+Understödstagare FLAG FOR THIS
+
+hustru - flag for this
+
+
+## Assistant
+
+biträde - flag for this to distinguish between.
+
+## managing director
+
+Verkställande direktör or v.d. - what is V.D.M.
+
+Verkställande on its own might be enough to identify it.
 
 ```{r}
 common_occs %>% 
@@ -786,27 +835,8 @@ common_occs %>%
 
 common_occs %>%
   mutate(
-    yrke_copy = yrke,
-    flag_for_multi_occs = ifelse(
-      str_detect(
-        yrke,
-        "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$"
-      ) &
-        str_detect(yrke, " [A-Z].*"), yes = TRUE, no = FALSE
+    yrke_copy = yrke
     )
-  ) %>%
-  mutate(
-    yrke_clean = str_squish(str_remove(yrke, "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$")),
-    yrke_f_occ = case_when(
-      flag_for_multi_occs == TRUE ~ word(yrke_clean, -1),
-      TRUE ~ NA_character_
-    ),
-    yrke = case_when(
-      flag_for_multi_occs == TRUE ~ str_remove(yrke, " .*"),
-      TRUE ~ yrke
-    )
-  ) %>%
-  select(-yrke_clean)
 
 ```
 
@@ -838,30 +868,32 @@ common_occs_trimmed <- common_occs %>%
     yrke_f_occ = str_extract(yrke, " f\\..*"),
     yrke = str_remove_all(yrke, " f\\..*")
   ) %>%
-    mutate(
-      flag_for_multi_occs = ifelse(
-        str_detect(
-          yrke,
-          "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$"
-        ) &
-          str_detect(yrke, " [A-Z].*"), yes = TRUE, no = FALSE
-      )
-    ) %>%
-    mutate(
-      yrke_clean = str_squish(str_remove(yrke, "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$")),
-      yrke_f_occ = case_when(
-        flag_for_multi_occs == TRUE ~ word(yrke_clean, -1),
-        TRUE ~ NA_character_
-      ),
-      yrke = case_when(
-        flag_for_multi_occs == TRUE ~ str_remove(yrke, " .*"),
-        TRUE ~ yrke
-      )
-    ) %>%
-    select(-yrke_clean) %>% 
-  mutate(yrke = str_remove_all(yrke, "[:punct:]"),
-         yrke = str_to_lower(yrke),
-         yrke = str_squish(yrke)) %>% 
+  mutate(
+    flag_for_multi_occs = ifelse(
+      str_detect(
+        yrke_copy,
+        "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$"
+      ) &
+        str_detect(yrke_copy, " [A-Z].*"), yes = TRUE, no = FALSE
+    )
+  ) %>%
+  mutate(
+    yrke_clean = str_squish(str_remove(yrke, "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$")),
+    yrke_f_occ = case_when(
+      flag_for_multi_occs == TRUE ~ word(yrke_clean, -1),
+      TRUE ~ NA_character_
+    ),
+    yrke = case_when(
+      flag_for_multi_occs == TRUE ~ str_remove(yrke, " .*"),
+      TRUE ~ yrke
+    )
+  ) %>%
+  select(-yrke_clean) %>%
+  mutate(
+    yrke = str_remove_all(yrke, "[:punct:]"),
+    yrke = str_to_lower(yrke),
+    yrke = str_squish(yrke)
+  ) %>%
   mutate(yrke_1 = word(yrke, 1))
 
 common_occs_trimmed %>% 
@@ -870,6 +902,10 @@ common_occs_trimmed %>%
 common_occs_trimmed %>% 
   filter(str_detect(yrke_1, "^med$")) %>% view()
 ```
+
+### Those withot work
+
+Utan fast anställning
 
 
 ```{r}
@@ -893,4 +929,258 @@ common_occs %>% head(100) %>% view()
 ```
 
 
+
+## Way to distinguish between Female title and holdover from man
+
+```{r}
+common_occs_trimmed %>% view()
+
+df_classification <- df %>% 
+  filter(yrke != "") %>% 
+  select(kon, yrke, age)
+
+df_classification <- df_classification %>% 
+  left_join(common_occs_trimmed %>% 
+              rename(yrke_clean = yrke), by = c("yrke" = "yrke_copy"))
+
+
+df_classification %>% 
+  filter(flag_for_multi_occs  == T) %>% view()
+```
+
+### How many there are of each one
+
+```{r}
+common_occs_trimmed_grouped <- common_occs_trimmed %>% 
+  group_by(yrke_1) %>% 
+  mutate(total_observations = sum(n)) %>% 
+  ungroup()
+
+common_occs_trimmed_grouped %>% 
+  arrange(desc(total_observations)) %>% 
+  distinct(yrke_1, total_observations, .keep_all = T) %>% 
+  select(yrke, total_observations, yrke_1) %>% view
+  
+common_occs_trimmed_grouped %>% 
+  filter(between(total_observations, 1, 5)) %>% 
+  summarise(sum(n))
+
+```
+
+### Most common places of work
+
+```{r}
+common_occs_trimmed %>% 
+  filter(!is.na(yrke_pow)) %>% 
+  count(yrke_pow, sort = T) %>% head(200) %>% view()
+```
+
+
+
+
+## New approach - 
+
+Just keep one wod in the first column for those that have only one word
+
+
+```{r}
+df_counts_of_occs <- df %>% 
+  select(yrke) %>% 
+  filter(yrke != "") %>% 
+  mutate(yrke_one = word(yrke, 1),
+         yrke_count_spaces = str_count(yrke, " "))
+
+df_counts_of_occs %>% 
+  count(yrke_count_spaces)
+
+df_counts_of_occs %>% 
+  filter(yrke_count_spaces == 5) %>% view()
+```
+
+
+
+
+### A new approach.
+
+Instead of classifying down to socio-economic group - rather group by leading codes.
+
+First look at the 1910 census, apply the same rules as above, 
+
+```{r}
+
+occstrings_1910 <- read_rds("data/OCCSTRING_lookup.rds") %>% 
+  rename(hisco = OCCHISCO,
+         yrke = OCCSTRNG)
+
+occstrings_1910 <- occstrings_1910 %>%
+  mutate(
+    # this makes a copy of the original column, that we then modify
+    yrke_copy = yrke,
+    yrke = str_to_lower(yrke),
+    # We create a column for former, indicated by fd. We remove this from the original column.
+
+    flag_fd = ifelse(str_detect(yrke, "f\\.d\\.|f\\.d|^fd| fd|f d\\.| f\\. d\\.|f\\. d$"),
+      TRUE, FALSE
+    ),
+    yrke = str_remove_all(yrke, "f\\.d\\.|f\\.d|^fd| fd|f d\\.| f\\. d\\.|f\\. d$"),
+    # fn
+    flag_fn = ifelse(str_detect(yrke, "f\\.n\\.|f\\. n\\.|f\\. n"),
+      TRUE, FALSE
+    ),
+    yrke = str_remove_all(yrke, "f\\.n\\.|f\\. n\\.|f\\. n"),
+
+
+    # create a column for place of work
+    yrke_pow = str_extract(yrke, " hos .*| vid .*| i .*| på.*| å .*| h\\. "),
+    # remove this from yrke
+    yrke = str_remove_all(yrke, " hos .*| vid .*| i .*| på.*| å .*| h\\. "),
+
+    # f.
+    yrke_f_occ = str_extract(yrke, " f\\..*"),
+    yrke = str_remove_all(yrke, " f\\..*"),
+    yrke = str_remove_all(yrke, " fa da"),
+    yrke = str_remove_all(yrke, "^fa | fa$| fa "),
+    yrke = str_remove_all(yrke, "^fada | fada$| fada "),
+    yrke = str_remove_all(yrke, "^da | da$| da ")
+  ) %>%
+  mutate(
+    flag_for_multi_occs = ifelse(
+      str_detect(
+        yrke_copy,
+        "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$"
+      ) &
+        str_detect(yrke_copy, " [A-Z].*"), yes = TRUE, no = FALSE
+    )
+  ) %>%
+  mutate(
+    yrke_clean = str_squish(str_remove(yrke, "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$")),
+    yrke_f_occ = case_when(
+      flag_for_multi_occs == TRUE ~ word(yrke_clean, -1),
+      TRUE ~ NA_character_
+    ),
+    yrke = case_when(
+      flag_for_multi_occs == TRUE ~ str_remove(yrke, " .*"),
+      TRUE ~ yrke
+    )
+  ) %>%
+  select(-yrke_clean) %>%
+  mutate(
+    yrke = str_remove_all(yrke, "[:punct:]"),
+    yrke = str_to_lower(yrke),
+    yrke = str_squish(yrke)
+  ) %>%
+  mutate(yrke_1 = word(yrke, 1))
+```
+
+How many disagreements do we have?
+
+```{r}
+
+
+occstrings_1910 %>% 
+  count(yrke_1, sort = T) %>% head(500) %>% view()
+```
+
+Need to describe how this has worked.
+
+```{r}
+occstrings_1910 %>% 
+  filter(yrke_1 =="arbetare") %>% 
+  select(hisco, yrke,  yrke_1) %>% 
+  count(hisco, sort = T)
+
+occstrings_1910 %>% 
+  filter(yrke_1 =="snickare") %>% 
+  select(hisco, yrke,  yrke_1) %>% 
+  count(hisco, sort = T)
+
+occstrings_1910 %>% 
+  filter(yrke_1 == "ingenjör") %>% 
+  count(hisco, sort = T)
+```
+
+How to deal with this.
+
+
+Okay so first pass is obviously a straight match.
+
+Then a SVM
+
+Then a neaural net.
+
+### Straight match
+
+```{r}
+df <- read_rds("data/augmented/df_1930_augmented.rds")
+
+df_titles <- df %>% 
+  select(id, yrke) %>% 
+  filter(yrke != "")
+
+
+df_titles <- df_titles %>%
+  mutate(
+    # this makes a copy of the original column, that we then modify
+    yrke_copy = yrke,
+    # We create a column for former, indicated by fd. We remove this from the original column.
+
+    flag_fd = ifelse(str_detect(yrke, "f\\.d\\.|f\\.d|^fd| fd|f d\\.| f\\. d\\.|f\\. d$"),
+      TRUE, FALSE
+    ),
+    yrke = str_remove_all(yrke, "f\\.d\\.|f\\.d|^fd| fd|f d\\.| f\\. d\\.|f\\. d$"),
+    # fn
+    flag_fn = ifelse(str_detect(yrke, "f\\.n\\.|f\\. n\\.|f\\. n"),
+      TRUE, FALSE
+    ),
+    yrke = str_remove_all(yrke, "f\\.n\\.|f\\. n\\.|f\\. n"),
+
+
+    # create a column for place of work
+    yrke_pow = str_extract(yrke, " hos .*| vid .*| i .*| på.*| å .*| h\\. "),
+    # remove this from yrke
+    yrke = str_remove_all(yrke, " hos .*| vid .*| i .*| på.*| å .*| h\\. "),
+
+    # f.
+    yrke_f_occ = str_extract(yrke, " f\\..*"),
+    yrke = str_remove_all(yrke, " f\\..*")
+  ) %>%
+  mutate(
+    flag_for_multi_occs = ifelse(
+      str_detect(
+        yrke_copy,
+        "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$"
+      ) &
+        str_detect(yrke_copy, " [A-Z].*"), yes = TRUE, no = FALSE
+    )
+  ) %>%
+  mutate(
+    yrke_clean = str_squish(str_remove(yrke, "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$")),
+    yrke_f_occ = case_when(
+      flag_for_multi_occs == TRUE ~ word(yrke_clean, -1),
+      TRUE ~ NA_character_
+    ),
+    yrke = case_when(
+      flag_for_multi_occs == TRUE ~ str_remove(yrke, " .*"),
+      TRUE ~ yrke
+    )
+  ) %>%
+  select(-yrke_clean) %>%
+  mutate(
+    yrke = str_remove_all(yrke, "[:punct:]"),
+    yrke = str_to_lower(yrke),
+    yrke = str_squish(yrke)
+  ) %>%
+  mutate(yrke_1 = word(yrke, 1))
+
+
+```
+
+
+
+
+```{r}
+df_titles
+
+occstrings_1910
+```
 
