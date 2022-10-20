@@ -1,0 +1,356 @@
+---
+title: "Prediction of classification"
+format: html
+---
+
+
+```{r}
+library(tidyverse)
+
+setwd(here::here())
+
+# df <- read_rds("data/augmented/df_1930_augmented.rds")
+
+```
+
+
+```{r}
+occstrings <- read_rds("data/OCCSTRING_1900_1910.rds") %>% 
+  rename(occ_hisco = OCCHISCO,
+         yrke = OCCSTRNG)
+
+occ_hisco_lookup <- read_rds("data/occ_hisco_lookup.rds")
+```
+
+
+Okay so here is the deal, it seems like the 1900 occupational strings don't have the swedish letters. So we can only use the 1910 census. I thought I was doing this already, but I wasn't.
+
+```{r}
+occstrings_1910 <- occstrings %>% 
+  filter(YEAR == 1910) %>% 
+  select(-YEAR)
+```
+
+Still have 5m observations. Good
+
+How many disagreements do we have?
+
+```{r}
+occstrings_1910 %>%
+  group_by(yrke) %>% 
+  summarise(n = n_distinct(occ_hisco)) %>% 
+  arrange(desc(n))
+
+occstrings_1910 %>% 
+  filter(yrke == "Putsgarntillverkningsarbetare") %>% 
+  count(occ_hisco)
+```
+
+So there are 16,778 individuals with an occupation mapped to more than one occ_hisco
+
+Let's deal with these first. We can reassign based on consensus, and one other rule.
+
+Consensus means that we count the number of individuals with each occ_hisco and select the occ_hisco with th largest number of observations as the true code.
+
+Let's make an example.
+
+```{r}
+library(gt)
+
+occstrings_1910 %>% 
+  filter(yrke == "Putsgarntillverkningsarbetare") %>% 
+  count(occ_hisco) %>% 
+  inner_join(occ_hisco_lookup, by = c("occ_hisco" = "occ_hisco_int")) %>% 
+  gt()
+
+occstrings_1910 %>% 
+  filter(yrke == "Understödstagare Skogsarbetare") %>% 
+  count(occ_hisco) %>% 
+  inner_join(occ_hisco_lookup, by = c("occ_hisco" = "occ_hisco_int")) %>% 
+  gt()
+
+occstrings_1910 %>% 
+  filter(str_detect(yrke, "Husägare")) %>% 
+  add_count(occ_hisco) %>% 
+  inner_join(occ_hisco_lookup, by = c("occ_hisco" = "occ_hisco_int")) %>% 
+  distinct() %>% 
+  head(10) %>% 
+  gt()
+```
+
+```{r}
+occstrings_1910 %>%
+  group_by(yrke) %>% 
+  mutate(n = n_distinct(occ_hisco)) %>% 
+  filter(n > 1) %>% 
+  group_by(yrke) %>% 
+  add_count(occ_hisco) %>% 
+  ungroup() %>% 
+  arrange(yrke)
+
+```
+
+
+
+```{r}
+
+occstrings_1910 <- occstrings_1910 %>%
+  mutate(
+    # this makes a copy of the original column, that we then modify
+    yrke_copy = yrke,
+    yrke = str_to_lower(yrke),
+    # We create a column for former, indicated by fd. We remove this from the original column.
+
+    flag_fd = ifelse(str_detect(yrke, "f\\.d\\.|f\\.d|^fd| fd|f d\\.| f\\. d\\.|f\\. d$"),
+      TRUE, FALSE
+    ),
+    yrke = str_remove_all(yrke, "f\\.d\\.|f\\.d|^fd| fd|f d\\.| f\\. d\\.|f\\. d$"),
+    # fn
+    flag_fn = ifelse(str_detect(yrke, "f\\.n\\.|f\\. n\\.|f\\. n"),
+      TRUE, FALSE
+    ),
+    yrke = str_remove_all(yrke, "f\\.n\\.|f\\. n\\.|f\\. n"),
+
+
+    # create a column for place of work
+    yrke_pow = str_extract(yrke, " hos .*| vid .*| i .*| på.*| å .*| h\\. "),
+    # remove this from yrke
+    yrke = str_remove_all(yrke, " hos .*| vid .*| i .*| på.*| å .*| h\\. "),
+
+    # f.
+    yrke_f_occ = str_extract(yrke, " f\\..*"),
+    yrke = str_remove_all(yrke, " f\\..*"),
+    yrke = str_remove_all(yrke, " fa da"),
+    yrke = str_remove_all(yrke, "^fa | fa$| fa "),
+    yrke = str_remove_all(yrke, "^fada | fada$| fada "),
+    yrke = str_remove_all(yrke, "^da | da$| da ")
+  ) %>%
+  mutate(
+    flag_for_multi_occs = ifelse(
+      str_detect(
+        yrke_copy,
+        "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$"
+      ) &
+        str_detect(yrke_copy, " [A-Z].*"), yes = TRUE, no = FALSE
+    )
+  ) %>%
+  mutate(
+    yrke_clean = str_squish(str_remove(yrke, "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$")),
+    yrke_f_occ = case_when(
+      flag_for_multi_occs == TRUE ~ word(yrke_clean, -1),
+      TRUE ~ NA_character_
+    ),
+    yrke = case_when(
+      flag_for_multi_occs == TRUE ~ str_remove(yrke, " .*"),
+      TRUE ~ yrke
+    )
+  ) %>%
+  select(-yrke_clean) %>% 
+  mutate(
+    # remove numbers that begin a word
+    yrke = str_remove_all(yrke, "[0-9]."),
+    yrke = str_remove_all(yrke, "[:punct:]"),
+    yrke = str_to_lower(yrke),
+    yrke = str_squish(yrke)
+  ) %>%
+  # tidy up funny letters
+  mutate(yrke_1 = word(yrke, 1))
+```
+
+
+
+```{r}
+# occstrings_1910 %>%
+# write_rds("data/OCCSTRING_1910_clean.rds")
+
+occstrings_1910_clean <- read_rds("data/OCCSTRING_1910_clean.rds")
+
+occstrings_1910_clean <- occstrings_1910_clean %>% 
+  mutate(yrke = str_squish(yrke))
+
+occstrings_1910_clean %>% 
+  count(yrke)
+```
+
+So there are still 54,731 different occupations after tidying up.
+
+What if we only look at the first word?
+
+```{r}
+occstrings_1910_clean %>% 
+  count(yrke_1)
+```
+
+Then there are 28,353
+
+Let's take the most common ones.
+
+```{r}
+occstrings_1910_clean <- occstrings_1910_clean %>% 
+  filter(yrke != "")
+```
+
+
+
+```{r}
+df <- occstrings_1910_clean %>% 
+  add_count(occ_hisco)
+
+df %>% 
+  filter(yrke == "husägare") %>% 
+  count(occ_hisco, sort = T)
+```
+
+
+```{r}
+df <- df %>% 
+  filter(occ_hisco != 99999)
+```
+
+```{r}
+df %>% 
+  filter(occ_hisco == 98320)
+
+df %>% 
+  filter(occ_hisco == 51040) %>% 
+  distinct(occ_hisco, yrke)
+
+df %>% 
+  filter(occ_hisco == 99500)
+```
+
+## Now what I have to do is translate the occ hisco codes to Hisco, then abbreviate these into some groups, and then do the ML exercise.
+
+First I need to test the ML exercise on it's own data, then try on the 1930 census.
+
+```{r}
+df %>% 
+  count(hisco, sort = T)
+```
+
+```{r}
+crosswalk <- readxl::read_excel("data/occhisco_to_hisco_crosswalk.xls") %>% 
+  janitor::clean_names() %>% 
+  select(-c(check_with_native_speaker, comments))
+
+crosswalk <- crosswalk %>% 
+  arrange(napp_code_occhisco) %>% 
+  mutate(across(.cols = c(napp_code_occhisco, hisco_nr), parse_number))
+```
+
+```{r}
+crosswalk <- crosswalk %>%
+  mutate(
+    hisco_major_group = str_extract(hisco_code, ".*-"),
+    hisco_major_group = parse_number(hisco_major_group)
+  ) %>%
+  mutate(hisco_major_group_name = case_when(
+    hisco_major_group %in% c(0, 1) ~ "PROFESSIONAL, TECHNICAL AND RELATED WORKERS",
+    hisco_major_group == 2 ~ "ADMINISTRATIVE AND MANAGERIAL WORKERS",
+    hisco_major_group == 3 ~ "CLERICAL AND RELATED WORKERS",
+    hisco_major_group == 4 ~ "SALES WORKERS",
+    hisco_major_group == 5 ~ "SERVICE WORKERS",
+    hisco_major_group == 6 ~ "AGRICULTURAL, ANIMAL HUSBANDRY AND FORESTRY WORKERS, FISHERMEN AND HUNTERS",
+    hisco_major_group %in% c(7, 8, 9) ~ "PRODUCTION AND RELATED WORKERS, TRANSPORT EQUIPMENT OPERATORS AND LABOURERS",
+  )) %>%
+  mutate(hisco_major_group_name = str_to_sentence(hisco_major_group_name))
+
+
+```
+
+
+```{r}
+df %>% 
+  count(occ_hisco)
+```
+
+So there are 453 different hisco codes.
+
+```{r}
+crosswalk %>% 
+  count(napp_code_occhisco)
+
+df %>%
+  count(occ_hisco) %>%
+  anti_join(crosswalk, by = c("occ_hisco" = "napp_code_occhisco"))
+```
+
+Okay so now we have a complete list of occhisco codes mapped to hisco codes and hisco groups.
+
+Let's do the join
+
+```{r}
+df <- df %>%
+  inner_join(crosswalk, by = c("occ_hisco" = "napp_code_occhisco"))
+```
+
+What terms are common?
+
+```{r}
+df %>% 
+  filter(str_detect(yrke, "änka")) %>% view()
+```
+
+It is clear that widows are mapped to their husbands occhisco
+
+```{r}
+df %>% 
+  filter(str_detect(yrke, "hustru"))
+
+```
+
+
+Let's just remove these for now
+
+```{r}
+df <- df %>% 
+  mutate(yrke = str_remove_all(yrke, "änka"),
+         yrke = str_remove_all(yrke, "hustru"))
+```
+
+
+
+### Now lets try our machine learning model again
+
+What do we want to predict?
+
+```{r}
+df %>% 
+  count(hisco_major_group_name)
+```
+
+This seems a bit funny. Let's have a look at the most common occupations by group
+
+```{r}
+most_common_hisco <- df %>% 
+  count(hisco_major_group_name, occ_hisco) %>% 
+  group_by(hisco_major_group_name) %>% 
+  slice_max(n, n = 5) %>% 
+  ungroup()
+
+get_top_yrke <- function(hs) {
+  df %>%
+    filter(occ_hisco == hs) %>%
+    count(yrke) %>%
+    slice_max(n, n = 1, with_ties = F) %>%
+    pull(yrke)
+}
+
+
+most_common_hisco <- most_common_hisco %>% 
+  mutate(top_yrke = map(occ_hisco, get_top_yrke))
+
+library(tidytext)
+
+most_common_hisco %>% 
+  unnest(top_yrke) %>% 
+  mutate(top_yrke = reorder_within(top_yrke, n, hisco_major_group_name)) %>% 
+  ggplot(aes(x = n, y = top_yrke, fill = hisco_major_group_name)) +
+  geom_col(show.legend = F) +
+  facet_wrap(~ hisco_major_group_name, scales = "free_y") +
+  scale_y_reordered() +
+  scale_x_continuous(labels = scales::number_format())
+
+
+```
+

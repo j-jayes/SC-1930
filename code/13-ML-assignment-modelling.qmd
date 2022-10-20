@@ -1,0 +1,125 @@
+---
+title: "13-ML-assignment-modelling"
+format: html
+---
+
+
+### SVM model
+
+```{r}
+library(tidymodels)
+
+df_mod <- read_rds("data/df_mod.rds")
+
+split <- initial_split(df_mod, strata = hisco_major_group_name)
+df_train <- training(split)
+df_test <- testing(split)
+
+folds <- vfold_cv(df_train)
+```
+
+
+#### Recipe
+
+Have to try some different tokenizations.
+
+```{r}
+library(textrecipes)
+library(themis)
+
+svm_rec <- recipe(hisco_major_group_name ~ yrke, data = df_train) %>%
+  step_mutate(
+    yrke = stringi::stri_trans_general(yrke, "latin-ascii"),
+    yrke = str_to_lower(yrke)
+  ) %>% 
+step_tokenize(yrke,
+  engine = "tokenizers.bpe",
+  training_options = list(vocab_size = 900)
+) %>%
+  step_tokenfilter(yrke, max_tokens = 900) %>%
+  step_tf(yrke) %>%
+  step_smote(hisco_major_group_name)
+
+svm_rec %>% prep() %>% bake(new_data = NULL)
+```
+
+```{r}
+svm_grid <- grid_regular(parameters(svm_rec), levels = 5)
+```
+
+
+```{r}
+svm_spec <- svm_linear() %>%
+  set_mode("classification") %>%
+  set_engine("LiblineaR")
+
+svm_spec
+
+po_wf <- workflow() %>%
+  add_recipe(svm_rec) %>%
+  add_model(svm_spec)
+
+po_wf
+```
+
+
+
+```{r}
+set.seed(234)
+
+po_rs <- fit_resamples(
+  po_wf,
+  folds,
+  metrics = metric_set(accuracy, sens, spec),
+  control = control_resamples(save_pred = TRUE)
+)
+
+# po_rs_tuned <- tune_grid(
+#   po_wf,
+#   folds,
+#   metrics = metric_set(accuracy, sens, spec),
+#   control = control_grid(save_pred = T),
+#   grid = svm_grid
+# )
+```
+
+Let's train a model to classify from string to category. Let's have a look at what HISCLASS means? Should we just take the first digit of a HISCO code?
+
+Following [this guide](https://juliasilge.com/blog/multinomial-volcano-eruptions/)
+
+Let's draw a confusion matrix
+
+```{r}
+po_rs %>%
+  collect_metrics()
+
+po_rs %>%
+  collect_predictions() %>%
+  conf_mat(outcome_fct, .pred_class) %>% 
+  autoplot()
+
+```
+
+```{r}
+# po_rs_tuned %>%
+#   collect_metrics() %>%
+#   ggplot(aes(max_tokens, mean, colour = .metric)) +
+#   geom_point() +
+#   facet_wrap(~.metric)
+```
+
+More tokens seems better! Maybe we are overfitting?
+
+```{r}
+# select_best(po_rs_tuned)
+# 
+# wf_final <- finalize_workflow(po_wf, tibble(max_tokens = 600))
+
+final_fit <- last_fit(po_wf, split)
+
+final_fit <- fit(po_wf, df_train)
+
+# final_fit %>% write_rds("data/models/svm_model_1.rds")
+```
+
+
