@@ -1,0 +1,267 @@
+---
+title: "ML-modelling-nn"
+format: html
+---
+
+
+### SVM model
+
+```{r}
+library(tidymodels)
+library(tidyverse)
+
+df_mod <- read_rds("data/df_mod.rds")
+
+outcomes <- df_mod %>% 
+  distinct(hisco_major_group_name) %>% 
+  mutate(outcome = row_number())
+
+df_mod <- df_mod %>% 
+  inner_join(outcomes) %>% 
+  select(yrke, outcome)
+```
+
+
+```{r}
+df_mod %>% 
+  ggplot(aes(nchar(yrke))) +
+  geom_histogram(binwidth = 1, alpha = .8) +
+  labs(x = "Number of characters per title",
+       y = "Number of titles")
+```
+
+Split with smaller set
+
+```{r}
+library(tidymodels)
+set.seed(1234)
+df_split <- df_mod %>%
+  filter(nchar(yrke) >= 5) %>%
+  initial_split()
+
+df_train <- training(df_split)
+df_test <- testing(df_split)
+
+```
+
+Preprocessing for deep learning
+
+```{r}
+df_train %>%
+  mutate(n_words = tokenizers::count_words(yrke)) %>%
+  ggplot(aes(n_words)) +
+  geom_bar() +
+  labs(
+    x = "Number of words per title",
+    y = "Number of titles"
+  )
+```
+
+Mostly 1 title.
+
+```{r}
+library(textrecipes)
+
+max_words <- 2e4
+max_length <- 2
+
+nn_rec <- recipe(~ yrke, data = df_train) %>%
+  step_tokenize(yrke) %>%
+  step_tokenfilter(yrke, max_tokens = max_words) %>%
+  step_sequence_onehot(yrke, 
+                       sequence_length = max_length,
+                       padding = "post",
+                       truncating = "post")
+
+nn_rec
+```
+
+###  One-hot sequence embedding of text
+
+```{r}
+nn_prep <-  prep(nn_rec)
+
+df_train_nn <- bake(nn_prep, 
+                 new_data = NULL, 
+                 composition = "matrix")
+
+dim(df_train_nn)
+```
+
+The matrix df_train_nn has 1,439,366 rows, corresponding to the rows of the training data, and 2 columns, corresponding to our chosen sequence length.
+
+### Simple flattened dense network
+
+```{r}
+library(keras)
+
+dense_model <- keras_model_sequential() %>%
+  layer_embedding(input_dim = max_words + 1,
+                  output_dim = 12,
+                  input_length = max_length) %>%
+  layer_flatten() %>%
+  layer_dense(units = 32, activation = "relu") %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+dense_model
+```
+
+Let us step through this model specification one layer at a time.
+
+We initiate the Keras model by using keras_model_sequential() to indicate that we want to compose a linear stack of layers.
+Our first layer_embedding() is equipped to handle the preprocessed data we have in kick_train. It will take each observation/row in kick_train and make dense vectors from our word sequences. This turns each observation into an embedding_dim  
+×
+  sequence_length matrix, 12  
+×
+  30 matrix in our case. In total, we will create a number_of_observations  
+×
+  embedding_dim  
+×
+  sequence_length data cube.
+The next layer_flatten() layer takes the matrix for each observation and flattens them into one dimension. This will create a 30 * 12 = 360 long vector for each observation.
+Lastly, we have 2 densely connected layers. The last layer has a sigmoid activation function to give us an output between 0 and 1, since we want to model a probability for a binary classification problem.
+
+```{r}
+dense_model %>% compile(
+  optimizer = "adam",
+  loss = "binary_crossentropy",
+  metrics = c("accuracy")
+)
+```
+
+
+```{r}
+dense_history <- dense_model %>%
+  fit(
+    x = df_train_nn,
+    y = df_train$outcome,
+    batch_size = 512,
+    epochs = 20,
+    validation_split = 0.25,
+    verbose = FALSE
+  )
+```
+
+
+
+```{r}
+plot(dense_history)
+
+```
+
+### Evaluation
+
+```{r}
+set.seed(234)
+df_val <- validation_split(df_train, strata = outcome)
+
+df_val
+```
+
+
+```{r}
+df_analysis <- bake(nn_prep, new_data = analysis(df_val$splits[[1]]),
+                      composition = "matrix")
+
+dim(df_analysis)
+```
+
+
+```{r}
+df_assess <- bake(nn_prep, new_data = assessment(df_val$splits[[1]]),
+                    composition = "matrix")
+dim(df_assess)
+```
+
+
+
+```{r}
+outcome_analysis <- analysis(df_val$splits[[1]]) %>% pull(outcome)
+
+outcome_assess <- assessment(df_val$splits[[1]]) %>% pull(outcome)
+```
+
+
+```{r}
+dense_model <- keras_model_sequential() %>%
+  layer_embedding(input_dim = max_words + 1,
+                  output_dim = 12,
+                  input_length = max_length) %>%
+  layer_flatten() %>%
+  layer_dense(units = 32, activation = "relu") %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+dense_model %>% compile(
+  optimizer = "adam",
+  loss = "binary_crossentropy",
+  metrics = c("accuracy")
+)
+```
+
+
+
+```{r}
+val_history <- dense_model %>%
+  fit(
+    x = df_analysis,
+    y = outcome_analysis,
+    batch_size = 512,
+    epochs = 10,
+    validation_data = list(df_assess, outcome_assess),
+    verbose = FALSE
+  )
+
+val_history
+```
+
+
+```{r}
+plot(val_history)
+
+```
+
+
+
+
+```{r}
+library(dplyr)
+
+keras_predict <- function(model, baked_data, response) {
+  predictions <- predict(model, baked_data)[, 1]
+  tibble(
+    .pred_1 = predictions,
+    .pred_class = if_else(.pred_1 < 0.5, 0, 1),
+    outcome = response
+  )  ## with matching levels
+}
+```
+
+
+
+
+
+```{r}
+predictions <- predict(dense_model, df_assess)
+
+predictions
+
+val_res <- keras_predict(dense_model, df_assess, outcome_assess)
+
+
+val_res
+```
+
+
+```{r}
+metrics(val_res, state, .pred_class)
+
+```
+
+
+
+```{r}
+val_res %>%
+  conf_mat(state, .pred_class) %>%
+  autoplot(type = "heatmap")
+```
+

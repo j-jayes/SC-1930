@@ -8,6 +8,7 @@ format: html
 
 ```{r}
 library(tidymodels)
+library(tidyverse)
 
 df_mod <- read_rds("data/df_mod.rds")
 
@@ -27,25 +28,25 @@ Have to try some different tokenizations.
 library(textrecipes)
 library(themis)
 
-svm_rec <- recipe(hisco_major_group_name ~ yrke, data = df_train) %>%
+df_train_small <- df_train %>% slice_sample(n = 1000)
+
+svm_rec <- recipe(hisco_major_group_name ~ yrke, data = df_train_small) %>%
   step_mutate(
-    yrke = stringi::stri_trans_general(yrke, "latin-ascii"),
+    # yrke = stringi::stri_trans_general(yrke, "latin-ascii"),
     yrke = str_to_lower(yrke)
-  ) %>% 
-step_tokenize(yrke,
-  engine = "tokenizers.bpe",
-  training_options = list(vocab_size = 900)
-) %>%
-  step_tokenfilter(yrke, max_tokens = 900) %>%
+  ) %>%
+  step_text_normalization(yrke) %>%
+  step_tokenize(yrke,
+    engine = "tokenizers.bpe",
+    training_options = list(vocab_size = 100)
+  ) %>%
+  step_tokenfilter(yrke, max_tokens = tune()) %>%
   step_tf(yrke) %>%
   step_smote(hisco_major_group_name)
 
 svm_rec %>% prep() %>% bake(new_data = NULL)
 ```
 
-```{r}
-svm_grid <- grid_regular(parameters(svm_rec), levels = 5)
-```
 
 
 ```{r}
@@ -62,15 +63,25 @@ po_wf <- workflow() %>%
 po_wf
 ```
 
+```{r}
+svm_param <- 
+  extract_parameter_set_dials(svm_rec)
+
+svm_grid <- tibble(max_tokens = c(10, 25, 50, 75, 100))
+```
+
 
 
 ```{r}
 set.seed(234)
 
-po_rs <- fit_resamples(
+df_train_small_folds <- vfold_cv(df_train_small, v = 5)
+
+po_rs <- tune_grid(
   po_wf,
-  folds,
-  metrics = metric_set(accuracy, sens, spec),
+  df_train_small_folds,
+  grid = svm_grid,
+  metrics = metric_set(accuracy, sens, specificity),
   control = control_resamples(save_pred = TRUE)
 )
 
@@ -95,7 +106,8 @@ po_rs %>%
 
 po_rs %>%
   collect_predictions() %>%
-  conf_mat(outcome_fct, .pred_class) %>% 
+  filter(max_tokens == 100) %>% 
+  conf_mat(hisco_major_group_name, .pred_class) %>% 
   autoplot()
 
 ```
@@ -113,13 +125,60 @@ More tokens seems better! Maybe we are overfitting?
 ```{r}
 # select_best(po_rs_tuned)
 # 
-# wf_final <- finalize_workflow(po_wf, tibble(max_tokens = 600))
+wf_final <- finalize_workflow(po_wf, tibble(max_tokens = 100))
 
 final_fit <- last_fit(po_wf, split)
 
-final_fit <- fit(po_wf, df_train)
+final_fit <- fit(wf_final, df_train_small)
 
 # final_fit %>% write_rds("data/models/svm_model_1.rds")
 ```
+
+
+```{r}
+
+```
+
+
+```{r}
+po_fit <- extract_fit_parsnip(final_fit)
+
+liblinear_obj <- po_fit$fit$W
+liblinear_df <- tibble(
+  term = colnames(liblinear_obj),
+  estimate = liblinear_obj[1, ]
+)
+liblinear_df
+```
+
+### Feature importance
+
+```{r}
+liblinear_df %>%
+  filter(term != "Bias") %>%
+  group_by(estimate > 0) %>%
+  slice_max(abs(estimate), n = 15) %>%
+  ungroup() %>%
+  mutate(term = str_remove(term, "tf_yrke_")) %>%
+  ggplot(aes(estimate, fct_reorder(term, estimate), fill = estimate > 0)) +
+  geom_col() +
+  geom_text(aes(label = term), family = "IBMPlexSans-Medium") +
+  scale_fill_brewer() +
+  scale_y_discrete(breaks = NULL) +
+  theme(axis.text.y = element_blank()) +
+  labs(
+    x = "Coefficient from linear SVM",
+    y = NULL,
+    fill = NULL,
+  )
+```
+
+```{r}
+predict(final_fit, tibble(yrke = ""))
+
+```
+
+
+
 
 

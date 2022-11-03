@@ -325,7 +325,7 @@ This seems a bit funny. Let's have a look at the most common occupations by grou
 most_common_hisco <- df %>% 
   count(hisco_major_group_name, occ_hisco) %>% 
   group_by(hisco_major_group_name) %>% 
-  slice_max(n, n = 5) %>% 
+  slice_max(n, n = 8) %>% 
   ungroup()
 
 get_top_yrke <- function(hs) {
@@ -342,14 +342,19 @@ most_common_hisco <- most_common_hisco %>%
 
 library(tidytext)
 
-most_common_hisco %>% 
-  unnest(top_yrke) %>% 
-  mutate(top_yrke = reorder_within(top_yrke, n, hisco_major_group_name)) %>% 
+most_common_hisco %>%
+  unnest(top_yrke) %>%
+  mutate(top_yrke = reorder_within(top_yrke, n, hisco_major_group_name)) %>%
   ggplot(aes(x = n, y = top_yrke, fill = hisco_major_group_name)) +
   geom_col(show.legend = F) +
-  facet_wrap(~ hisco_major_group_name, scales = "free_y") +
+  facet_wrap(~hisco_major_group_name, scales = "free_y") +
   scale_y_reordered() +
-  scale_x_continuous(labels = scales::number_format())
+  scale_x_continuous(labels = scales::number_format()) +
+  labs(
+    x = "Number of individuals with occupation in 1930 census",
+    title = "Most common occupations by HISCO major group",
+    subtitle = "In the Swedish census, 1930"
+  )
 
 
 ```

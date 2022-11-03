@@ -235,7 +235,7 @@ treat_group_100_150_250_augmented <- treat_group_100_150_augmented %>%
 ### Now joining together the other variables
 
 ```{r}
-df <- read.csv(here::here("data", "Folk1930.csv"), sep = "\t")
+df <- read.csv(here::here("data", "Folk1930.csv"), sep = "\t", fileEncoding="latin1")
 
 df <- df %>% as_tibble() %>% 
   janitor::clean_names()

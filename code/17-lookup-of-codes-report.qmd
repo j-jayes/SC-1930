@@ -1,0 +1,555 @@
+---
+title: "Occupational lookups"
+format: html
+
+execute: 
+  echo: false
+  message: false
+  warning: false
+---
+
+## Purpose
+
+How many of the occupational titles in 1930 can be read across for Hisco codes directly from 1910?
+
+### Starting point
+
+We start with the 1910 titles and occupational hisco classifications. 
+
+```{r}
+library(tidyverse)
+library(gt)
+library(scales)
+
+occstrings_1910_clean <- read_rds(here::here("data/OCCSTRING_1910_clean.rds"))
+
+
+# occstrings_1910_clean %>%
+#   count(occ_hisco, sort = T)
+```
+
+20,232 observations have a string that is classified as 99999. 
+
+Some of these should be reclassified surely?
+
+```{r}
+occstrings_1910_clean %>%
+  filter(
+    occ_hisco == 99999,
+    yrke != ""
+  ) %>%
+  count(yrke, sort = T) %>% 
+  head(10) %>% 
+  mutate(n = scales::number(n)) %>% 
+  gt() %>% 
+  tab_header(title = "Most common occupations classified as unknown",
+             subtitle = "Occupational hisco code 99999")
+```
+
+Anyhow, let's go on for the moment. We can return to this.
+
+```{r, eval=F}
+df <- read_rds(here::here("data/augmented/df_1930_augmented.rds"))
+
+df_yrke_1930 <- df %>%
+  select(id, yrke, kon) %>% 
+  mutate(
+    # this makes a copy of the original column, that we then modify
+    yrke_copy = yrke,
+    yrke = str_to_lower(yrke),
+    # We create a column for former, indicated by fd. We remove this from the original column.
+
+    flag_fd = ifelse(str_detect(yrke, "f\\.d\\.|f\\.d|^fd| fd|f d\\.| f\\. d\\.|f\\. d$"),
+      TRUE, FALSE
+    ),
+    yrke = str_remove_all(yrke, "f\\.d\\.|f\\.d|^fd| fd|f d\\.| f\\. d\\.|f\\. d$"),
+    # fn
+    flag_fn = ifelse(str_detect(yrke, "f\\.n\\.|f\\. n\\.|f\\. n"),
+      TRUE, FALSE
+    ),
+    yrke = str_remove_all(yrke, "f\\.n\\.|f\\. n\\.|f\\. n"),
+
+
+    # create a column for place of work
+    yrke_pow = str_extract(yrke, " hos .*| vid .*| i .*| på.*| å .*| h\\. "),
+    # remove this from yrke
+    yrke = str_remove_all(yrke, " hos .*| vid .*| i .*| på.*| å .*| h\\. "),
+
+    # f.
+    yrke_f_occ = str_extract(yrke, " f\\..*"),
+    yrke = str_remove_all(yrke, " f\\..*"),
+    yrke = str_remove_all(yrke, " fa da"),
+    yrke = str_remove_all(yrke, "^fa | fa$| fa "),
+    yrke = str_remove_all(yrke, "^fada | fada$| fada "),
+    yrke = str_remove_all(yrke, "^da | da$| da ")
+  ) %>%
+  mutate(
+    flag_for_multi_occs = ifelse(
+      str_detect(
+        yrke_copy,
+        "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$"
+      ) &
+        str_detect(yrke_copy, " [A-Z].*"), yes = TRUE, no = FALSE
+    )
+  ) %>%
+  mutate(
+    yrke_clean = str_squish(str_remove(yrke, "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$")),
+    yrke_f_occ = case_when(
+      flag_for_multi_occs == TRUE ~ word(yrke_clean, -1),
+      TRUE ~ NA_character_
+    ),
+    yrke = case_when(
+      flag_for_multi_occs == TRUE ~ str_remove(yrke, " .*"),
+      TRUE ~ yrke
+    )
+  ) %>%
+  select(-yrke_clean) %>% 
+  mutate(
+    # remove numbers that begin a word
+    yrke = str_remove_all(yrke, "[0-9]."),
+    yrke = str_remove_all(yrke, "[:punct:]"),
+    yrke = str_to_lower(yrke),
+    yrke = str_squish(yrke)
+  ) %>%
+  # tidy up funny letters
+  mutate(yrke_1 = word(yrke, 1))
+```
+
+
+### Check for se and ag
+
+```{r}
+df_ag <- df_yrke_1930 %>% 
+  filter(str_detect(yrke, "s e$| ag$| ag$| se$"))
+
+df_ag %>% view()
+```
+
+```{r}
+occstrings_1910_clean %>% 
+  filter(occ_hisco == 12900) %>% view()
+```
+
+
+
+```{r, eval=F}
+### We need to remove the "se"
+
+df_yrke_1930 <- df_yrke_1930 %>% 
+  mutate(yrke = str_squish(str_remove_all(yrke, "s e$| ag$| ag$| se$")))
+
+# df_yrke_1930 %>% write_rds(here::here("data/temp/df_yrke_1930.rds"))
+```
+
+```{r}
+df_yrke_1930 <- read_rds(here::here("data/temp/df_yrke_1930.rds"))
+```
+
+### In the 1930 census
+
+How many distinct occupational titles are there now that we have tidied them up?
+
+```{r}
+titles_1930 <- df_yrke_1930 %>% 
+  filter(yrke != "") %>% 
+  count(yrke, sort = T) %>% 
+  rename(n_1930 = n)
+
+n_titles_1930 <- titles_1930 %>% count() %>% pull() %>% scales::number()
+
+n_total_titled_obs_1930 <- titles_1930 %>% summarise(sum(n_1930)) %>% pull() %>% scales::number()
+
+n_total_obs_1930 <- df_yrke_1930 %>% count() %>% pull() %>% scales::number()
+```
+
+So we have `r n_titles_1930` distinct titles, which comprises `r n_total_titled_obs_1930` individuals of the total `r n_total_obs_1930` observations.
+
+### How many distinct titles are there in the 1910 census?
+
+```{r}
+titles_1910 <- occstrings_1910_clean %>%
+  filter(yrke != "") %>%
+  count(yrke, sort = T) %>%
+  rename(n_1910 = n)
+
+n_titles_1910 <- titles_1910 %>% count() %>% pull() %>% scales::number()
+```
+
+There are `r n_titles_1910` distinct titles in the 1910 census.
+
+### How many overlap?
+
+We want to lookup the occupational hisco for the 1930 census from the 1910 census.
+
+So we can match exactly the titles from 1910 to 1930.
+
+```{r}
+n_distinct_joined <- titles_1930 %>% 
+  inner_join(titles_1910) %>% 
+  count() %>% 
+  pull() %>% 
+  scales::number()
+```
+
+So there are `r n_distinct_joined` distinct occupations in common between the two sources after joining them together.
+
+We can have a look at the most common ones below:
+
+```{r}
+titles_1930 %>% 
+  left_join(titles_1910) %>% 
+  head(30) %>% 
+  mutate(yrke = fct_reorder(yrke, n_1930)) %>% 
+  pivot_longer(-yrke) %>% 
+  mutate(name = str_replace(name, "n_", "Number of observations in ")) %>% 
+  ggplot(aes(value, yrke, fill = name)) +
+  geom_col(show.legend = F) +
+  scale_x_continuous(labels = scales::number_format()) +
+  facet_wrap(~ name) +
+  labs(x = NULL,
+       y = "Title")
+```
+
+What proportion do these `r n_distinct_joined` make up of the 1930 census?
+
+```{r}
+n_total_obs_with_occhisco_1930 <- titles_1930 %>% 
+  inner_join(titles_1910) %>% 
+  summarise(total_1930 = sum(n_1930)) %>% 
+  pull()
+
+n_total_obs_with_nonmissing_title_1930 <- df_yrke_1930 %>% 
+  filter(yrke != "") %>% 
+  count()
+
+pct_share = n_total_obs_with_occhisco_1930 / n_total_obs_with_nonmissing_title_1930
+
+pct_share <- pct_share %>% 
+  pull() %>% 
+  scales::percent()
+
+n_total_obs_with_occhisco_1930 <- n_total_obs_with_occhisco_1930 %>% scales::number()
+```
+
+So `r n_total_obs_with_occhisco_1930` of the 1930 observations then have a hisco code.
+
+As a percentage of the total non-missing titles in the 1930 census this is `r pct_share`.
+
+### What remains?
+
+How many people in the 1930 census have a non-missing occupation but still do not have an occupational hisco?
+
+```{r}
+still_remain <- titles_1930 %>% 
+  anti_join(titles_1910) %>% 
+  summarise(sum(n_1930)) %>% 
+  pull() %>% 
+  scales::number()
+
+remaining_titles <- titles_1930 %>% 
+  anti_join(titles_1910) %>% 
+  count() %>% 
+  pull() %>% 
+  scales::number()
+```
+
+So `r still_remain` observations remain without any occupational hisco, with `r remaining_titles` different titles.
+
+
+What are the most common titles in the 1930 census that still lack a classification?
+
+```{r}
+titles_1930 %>%
+  anti_join(titles_1910) %>%
+  arrange(desc(n_1930)) %>%
+  head(50) %>%
+  mutate(n_1930 = scales::number(n_1930)) %>%
+  gt() %>%
+  tab_header(
+    title = "Most common occupations still without classification",
+    subtitle = "In 1930 census"
+  )
+```
+
+So there are two main types of titles: new jobs (e.g. bilreparatör) and multiple occupations e.g. (jordbruksarbetare skogsarbetare).
+
+If we wanted to do this manually, how would long would it take?
+
+If we do the first 500 titles by hand, we can get to 25 percent of the missing values. The next 44 635 make up 75 percent, but maybe it's fine just to leave them out.
+
+```{r}
+total_remaining_obs <- titles_1930 %>% 
+  anti_join(titles_1910) %>% 
+  summarise(sum(n_1930)) %>% 
+  pull()
+
+
+titles_1930 %>%
+  anti_join(titles_1910) %>%
+  mutate(
+    rn = row_number() - 1,
+    gn = rn - rn %% 50
+  ) %>%
+  group_by(gn) %>%
+  summarise(total_obs = sum(n_1930)) %>%
+  mutate(
+    gn = gn + 50,
+    pct = total_obs / total_remaining_obs,
+    pct_cumsum = cumsum(pct),
+    flag = case_when(
+      gn == 500 ~ TRUE,
+      TRUE ~ FALSE
+      )
+  ) %>% 
+  head(30) %>% 
+  ggplot(aes(gn, pct_cumsum, fill = flag)) +
+  geom_col(show.legend = F) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(x = "Number of next occupations",
+       y = "Percent of observations that get assinged a hisco")
+
+```
+
+
+### Let's take the double titles and try to assign those
+
+```{r}
+titles_1930_no_match <- titles_1930 %>%
+  anti_join(titles_1910) %>%
+  mutate(words = str_count(yrke, "\\w+")) %>%
+  mutate(yrke_1 = str_squish(str_remove(yrke, " .*"))) %>%
+  anti_join(titles_1910, by = c("yrke_1" = "yrke")) %>%
+  arrange(desc(n_1930)) 
+
+titles_1930_no_match
+
+```
+
+```{r}
+titles_1930_no_match %>% 
+  write_rds("data/occupations/titles_1930_no_match.rds")
+```
+
+
+```{r}
+titles_1930_no_match %>% 
+  select(yrke, n_1930) %>% write.csv("data/occupations/titles_1930_no_match.csv")
+```
+
+
+```{r}
+# occstrings_1910_clean %>% 
+#   distinct(occ_hisco, yrke) %>% 
+#   arrange(occ_hisco, yrke) %>% 
+#   write.csv("data/occupations/occhisco_lookup.csv")
+```
+
+
+### Still need to decide on a code for each yrke
+
+What is the problem? If there is a title, say sömmerska, and it has more than one occ_hisco code for it, how do we assign it?
+
+```{r}
+occstrings_1910_clean %>% 
+  filter(yrke == "sömmerska") %>% 
+  count(occ_hisco, sort = T)
+```
+
+Write a loop to report on all of them.
+
+```{r}
+occstrings_1910_clean_sorted <- occstrings_1910_clean %>% 
+  filter(yrke != "") %>% 
+  count(yrke, occ_hisco, sort = T)
+
+occstrings_1910_clean_sorted <- occstrings_1910_clean_sorted %>% 
+  add_count(yrke)
+```
+
+
+
+```{r}
+occstrings_1910_clean_sorted %>% 
+  filter(yrke == "hemmansägare")
+
+occstrings_1910_clean_sorted %>% 
+  filter(nn > 1) %>% 
+  arrange(yrke, desc(n)) %>% view()
+```
+
+So many of them that have multiple codes for the occupation end up with 99999 as the top option. 
+
+What should we do in this case? Look at the most common ones manually??
+
+```{r}
+occstrings_1910_clean_sorted %>%
+  filter(nn > 1) %>%
+  arrange(yrke, desc(n)) %>%
+  group_by(yrke) %>%
+  mutate(index = row_number()) %>%
+  mutate(top_rank_99999 = case_when(
+    index == 1 & occ_hisco == 99999 ~ TRUE,
+    TRUE ~ FALSE
+  )) %>%
+  ungroup() %>%
+  filter(top_rank_99999 == TRUE) %>%
+  arrange(desc(n))
+```
+
+There are 109 of them.
+
+What about the ones that have conflicting non-missing options? Let's assign them to one.
+
+```{r}
+occstrings_1910_clean_sorted %>%
+  arrange(yrke, desc(n)) %>%
+  group_by(yrke) %>%
+  mutate(index = row_number()) %>%
+  mutate(top_rank_99999 = case_when(
+    index == 1 & occ_hisco == 99999 ~ TRUE,
+    TRUE ~ FALSE
+  )) %>%
+  ungroup() %>%
+  filter(top_rank_99999 == FALSE,
+         index == 1)
+```
+
+
+## Now we need to get the occuptional relations and see how those map across to hisclass
+
+What I need to understand is how the status and relation variables work.
+
+If I can use these numbers, then I can create a hisco mapping.
+
+I should just read the document. 
+
+```{r}
+library(ipumsr)
+
+dat <- ipumsr::read_ipums_micro(
+  ddi = "data/ipums/ipumsi_00006.xml",
+  data_file = "data/ipums/ipumsi_00006.dat.gz"
+)
+
+dat <- dat %>% 
+  filter(YEAR == 1910)
+```
+
+Let's have a look at the common words that infer an occupational status
+
+```{r}
+dat %>%
+  count(OCSTATUS) %>%
+  ggplot(aes(n, factor(OCSTATUS))) +
+  geom_col()
+```
+
+So let's have a look at those who are 34 - assistant
+
+```{r}
+library(tidytext)
+
+dat %>% 
+  filter(OCSTATUS == 34) %>% 
+  unnest_tokens(word, OCCSTRNG) %>% 
+  count(word, sort = T)
+```
+
+Okay even amongst those who are classified as assistnts the 6th most common term is f.d. So It seems like this hasn't been done so well. Let's not try and classify them any further.
+
+```{r}
+dat %>% 
+  slice_sample(n = 10) %>% 
+  select(OCCHISCO, OCCSTRNG, OCSTATUS, OCRELATE) %>% 
+  head(10)
+
+dat %>% 
+  filter(str_detect(OCCSTRNG, "Arrendator")) %>% 
+  select(OCCSTRNG, OCCHISCO, OCSTATUS)
+```
+
+
+
+```{r}
+dat %>% 
+  filter(OCCHISCO == 54020) %>% 
+  distinct(OCSTATUS, OCRELATE)
+```
+
+So fr one hisco code, 54020, there are 7 different combinations of relation and status.
+
+
+
+```{r}
+# dat %>% 
+#   count(OCSTATUS, OCRELATE)
+# 
+# dat %>% 
+#   count(OCSTATUS, sort = T)
+# 
+# titles <- dat %>% 
+#   count(OCCSTRNG, sort = T)
+# 
+# titles %>% 
+#   slice_sample(n = 10)
+# 
+# dat %>%
+#   filter(OCCSTRNG == "Plåtverksarbetare") %>%
+#   count(OCSTATUS, OCRELATE)
+# 
+# dat %>% 
+#   count(OCCSTRNG, OCCHISCO, OCSTATUS, OCRELATE)
+```
+
+Data source for the [NAPP OCC Hisco to Hisco classification scheme](https://easy.dans.knaw.nl/ui/datasets/id/easy-dataset:73810)
+
+```{r}
+dat_sorted <- dat %>% 
+  filter(OCCSTRNG != "") %>% 
+  count(OCCSTRNG, OCCHISCO, OCSTATUS, OCRELATE, sort = T)
+
+dat_sorted <- dat_sorted %>% 
+  add_count(OCCSTRNG)
+
+dat_sorted %>% 
+  filter(nn > 1) %>% 
+  arrange(OCCSTRNG, desc(n))
+
+dat_sorted %>%
+  filter(nn > 1) %>%
+  arrange(OCCSTRNG, desc(n)) %>%
+  group_by(OCCSTRNG) %>%
+  mutate(index = row_number()) %>%
+  mutate(top_rank_99999 = case_when(
+    index == 1 & OCCHISCO == 99999 ~ TRUE,
+    TRUE ~ FALSE
+  )) %>%
+  ungroup() %>%
+  filter(top_rank_99999 == TRUE) %>%
+  arrange(desc(n))
+
+```
+
+These 44 repeated codes are a problem.
+
+These ones are easier to deal with
+
+```{r}
+
+dat_sorted %>%
+  filter(nn > 1) %>%
+  arrange(OCCSTRNG, desc(n)) %>%
+  group_by(OCCSTRNG) %>%
+  mutate(index = row_number()) %>%
+  mutate(top_rank_99999 = case_when(
+    index == 1 & OCCHISCO == 99999 ~ TRUE,
+    TRUE ~ FALSE
+  )) %>%
+  ungroup() %>%
+  filter(top_rank_99999 == FALSE) %>%
+  arrange(desc(n))
+```
+
+So these 872 have a non-9999 top code, but multiple assignments within one occstring.
+
+
