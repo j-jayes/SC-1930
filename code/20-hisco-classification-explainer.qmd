@@ -1,0 +1,544 @@
+---
+title: "Linking occupatonal hisco form 1910 to 1930"
+format: html
+---
+
+## Purpose
+
+This document explains the assignment of hisco and hisclass codes to the Swedish 1930 census. 
+
+The process has a few parts.
+
+### What we want
+
+We want to assign each record in the 1930 census to a social class and and occupational class so that they are easier to work with.
+
+We want at the end of this process to save a file with each of the 1930 census observations and a hisco and hisclass.
+
+The intermediately generated varibles (cleaned up titles etc.) will be available as an auxiliary file.
+
+(One thing that could follow later is to try and assign status and relation variables along with the hisco codes)
+
+### What we have
+
+We have only the occupational title.
+
+### Process
+
+We can use this title to assign an occupational hisco (used in the Swedish censuses from 1880 to 1910 by IPUMS International), then map across to a hisco code, and then a hisclass variable.
+
+**I want to make a diagram here that shows the process**
+
+The diagram will have a sankey structure.
+
+I'm going to put all of the code in this one document, even if it is not executed on compiling.
+
+## Data sources
+
+The first source of data is the 1930 Swedish census. This is as yet incompletely digitized, but is available fom Riksarkivet.
+
+The second source of data is the 1910 Swedish census. It will be used as a source of occupational strings and occupational hisco codes. 
+
+The third is a crosswalk between occupational hisco (used in the Swedish censuses) and hisco (from which we can assign hisclass).
+
+The fourth is a crosswalk between hisco and hisclass.
+
+## Process
+
+### Ingest 1930 occupations
+
+The first thing we are going to do is get in the 1930 census data and clean it up so that we can match across to the 1910 census data.
+
+```{r}
+#| eval: false
+df <- read_rds(here::here("data/augmented/df_1930_augmented.rds"))
+
+df_1930 <- df %>%
+  # we need only the id and occupation variables
+  select(id, yrke) %>% 
+  mutate(
+    # this makes a copy of the original column, that we then modify
+    yrke_copy = yrke,
+    yrke = str_to_lower(yrke),
+    # We create a column for former, indicated by fd. We remove this from the original column.
+    # we can use this later to improve the hisclass classification
+
+    flag_fd = ifelse(str_detect(yrke, "f\\.d\\.|f\\.d|^fd| fd|f d\\.| f\\. d\\.|f\\. d$"),TRUE, FALSE),
+    yrke = str_remove_all(yrke, "f\\.d\\.|f\\.d|^fd| fd|f d\\.| f\\. d\\.|f\\. d$"),
+    # flag for only doing the occupation temporarily
+    flag_fn = ifelse(str_detect(yrke, "f\\.n\\.|f\\. n\\.|f\\. n"),TRUE, FALSE),
+    yrke = str_remove_all(yrke, "f\\.n\\.|f\\. n\\.|f\\. n"),
+
+    # create a column for place of work
+    yrke_pow = str_extract(yrke, " hos .*| vid .*| i .*| på.*| å .*| h\\. "),
+    yrke = str_remove_all(yrke, " hos .*| vid .*| i .*| på.*| å .*| h\\. "),
+
+    # create a column for former occupation
+    yrke_f_occ = str_extract(yrke, " f\\..*"),
+    
+    # tidy up the remaining occpations
+    yrke = str_remove_all(yrke, " f\\..*"),
+    yrke = str_remove_all(yrke, " fa da"),
+    yrke = str_remove_all(yrke, "^fa | fa$| fa "),
+    yrke = str_remove_all(yrke, "^fada | fada$| fada "),
+    yrke = str_remove_all(yrke, "^da | da$| da ")
+  ) %>%
+  mutate(flag_for_multi_occs = ifelse(str_detect(yrke_copy, "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$"
+      ) &
+        str_detect(yrke_copy, " [A-Z].*"), yes = TRUE, no = FALSE
+    )
+  ) %>%
+  mutate(
+    yrke_clean = str_squish(str_remove(yrke, "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$")),
+    yrke_f_occ = case_when(
+      flag_for_multi_occs == TRUE ~ word(yrke_clean, -1),
+      TRUE ~ NA_character_
+    ),
+    yrke = case_when(
+      flag_for_multi_occs == TRUE ~ str_remove(yrke, " .*"),
+      TRUE ~ yrke
+    )
+  ) %>%
+  select(-yrke_clean) %>% 
+  mutate(
+    # remove numbers that begin a word
+    yrke = str_remove_all(yrke, "[0-9]."),
+    yrke = str_remove_all(yrke, "[:punct:]"),
+    yrke = str_to_lower(yrke),
+    yrke = str_squish(yrke)
+  ) %>%
+  # tidy up funny letters
+  mutate(yrke_1 = word(yrke, 1))
+```
+
+```{r}
+#| include: false
+library(tidyverse)
+df_1930 <- read_rds(here::here("data/temp/df_yrke_1930.rds"))
+```
+
+### Clean up 1910 census data
+
+```{r}
+#| eval: false
+
+library(ipumsr)
+
+df_1910 <- ipumsr::read_ipums_micro(
+  ddi = here::here("data/ipums/ipumsi_00006.xml"),
+  data_file = here::here("data/ipums/ipumsi_00006.dat.gz")
+)
+
+df_1910 <- df_1910 %>% 
+  filter(YEAR == 1910)
+
+df_1910 <- df_1910 %>% 
+  select(OCCHISCO, OCCSTRNG) %>% 
+  mutate(occ_hisco = as.numeric(OCCHISCO)) %>% 
+  select(occ_hisco, yrke = OCCSTRNG)
+
+df_1910 <- df_1910 %>% 
+  mutate(
+    # this makes a copy of the original column, that we then modify
+    yrke_copy = yrke,
+    yrke = str_to_lower(yrke),
+    # We create a column for former, indicated by fd. We remove this from the original column.
+    # we can use this later to improve the hisclass classification
+
+    flag_fd = ifelse(str_detect(yrke, "f\\.d\\.|f\\.d|^fd| fd|f d\\.| f\\. d\\.|f\\. d$"),TRUE, FALSE),
+    yrke = str_remove_all(yrke, "f\\.d\\.|f\\.d|^fd| fd|f d\\.| f\\. d\\.|f\\. d$"),
+    # flag for only doing the occupation temporarily
+    flag_fn = ifelse(str_detect(yrke, "f\\.n\\.|f\\. n\\.|f\\. n"),TRUE, FALSE),
+    yrke = str_remove_all(yrke, "f\\.n\\.|f\\. n\\.|f\\. n"),
+
+    # create a column for place of work
+    yrke_pow = str_extract(yrke, " hos .*| vid .*| i .*| på.*| å .*| h\\. "),
+    yrke = str_remove_all(yrke, " hos .*| vid .*| i .*| på.*| å .*| h\\. "),
+
+    # create a column for former occupation
+    yrke_f_occ = str_extract(yrke, " f\\..*"),
+    
+    # tidy up the remaining occpations
+    yrke = str_remove_all(yrke, " f\\..*"),
+    yrke = str_remove_all(yrke, " fa da"),
+    yrke = str_remove_all(yrke, "^fa | fa$| fa "),
+    yrke = str_remove_all(yrke, "^fada | fada$| fada "),
+    yrke = str_remove_all(yrke, "^da | da$| da ")
+  ) %>%
+  mutate(flag_for_multi_occs = ifelse(str_detect(yrke_copy, "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$"
+      ) &
+        str_detect(yrke_copy, " [A-Z].*"), yes = TRUE, no = FALSE
+    )
+  ) %>%
+  mutate(
+    yrke_clean = str_squish(str_remove(yrke, "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$")),
+    yrke_f_occ = case_when(
+      flag_for_multi_occs == TRUE ~ word(yrke_clean, -1),
+      TRUE ~ NA_character_
+    ),
+    yrke = case_when(
+      flag_for_multi_occs == TRUE ~ str_remove(yrke, " .*"),
+      TRUE ~ yrke
+    )
+  ) %>%
+  select(-yrke_clean) %>% 
+  mutate(
+    # remove numbers that begin a word
+    yrke = str_remove_all(yrke, "[0-9]."),
+    yrke = str_remove_all(yrke, "[:punct:]"),
+    yrke = str_to_lower(yrke),
+    yrke = str_squish(yrke)
+  ) %>%
+  # tidy up funny letters
+  mutate(yrke_1 = word(yrke, 1))
+
+```
+
+```{r}
+#| include: false
+df_1910 <- read_rds(here::here("data/temp/df_yrke_1910.rds"))
+```
+
+We want a set of distinct occupations to match against.
+
+Let's check if there are any instances of one title mapping to multiple occupational hiscos.
+
+```{r}
+df_1910_duplicates <- df_1910 %>% 
+  count(yrke, occ_hisco, sort = T, name = "n_yrke_with_occ_hisco") %>% 
+  add_count(yrke, name = "n_diff_occ_hiscos") %>% 
+  arrange(desc(n_diff_occ_hiscos))
+```
+
+
+```{r}
+#| echo: false
+
+library(gt)
+
+df_1910_duplicates %>%
+  head(20) %>%
+  gt() %>%
+  tab_header(
+    title = "Titles assigned to multiple codes",
+    subtitle = "The case of gårdsägare"
+  ) %>%
+  cols_label(
+    yrke = "Title",
+    occ_hisco = "Code",
+    n_yrke_with_occ_hisco = "Number of records with this code",
+    n_diff_occ_hiscos = "Total different codes for this title"
+  )
+
+gardsagare <- df_1910_duplicates %>% 
+  slice(1)
+```
+
+So we can see that for the title `r gardsagare$yrke`, there are `r gardsagare$n_yrke_with_occ_hisco` instances in the 1910 census of the title being assigned the occupational hisco code `r gardsagare$occ_hisco`, for farmer.
+
+In the instances where there are multiple occupational hisco codes assignd to one occupation, we will use a simple rule.
+
+We count the number of records assigned each occupational hisco within each title, take the top code and keep it as the assigned code. 
+
+**(If the top code is 99999, we can assign it manually later.)**
+
+We implement the rule below.
+
+```{r}
+df_1910 <- df_1910_duplicates %>%
+  group_by(yrke) %>%
+  arrange(desc(n_yrke_with_occ_hisco)) %>%
+  mutate(index = row_number()) %>%
+  ungroup() %>%
+  filter(index == 1) %>%
+  select(yrke, occ_hisco)
+```
+
+```{r}
+#| echo: false
+df_1910_n <- df_1910 %>% count() %>% pull() %>% scales::number()
+```
+
+Now there are just `r df_1910_n` records.
+
+## Iterative matching for occupational hisco codes
+
+### Matching round 1
+
+The matching of 1930 titles to occupational hisco codes requires at least three steps.
+
+The first is the most simple to describe. It is simply an exact match between the titles in 1910 and the titles in 1930.
+
+```{r}
+df_1930_joined_1 <- df_1930 %>% 
+  select(id, yrke) %>% 
+  inner_join(df_1910)
+```
+
+
+```{r}
+#| echo: false
+
+df_1930_joined_1_n <- df_1930_joined_1 %>% count() %>% pull()
+
+df_1930_n <- df_1930 %>% count() %>% pull()
+
+pct_share <- df_1930_joined_1_n / df_1930_n
+
+pct_share <- pct_share %>% 
+  scales::percent(accuracy = 0.01)
+
+df_1930_joined_1_n <- df_1930_joined_1_n %>% scales::number()
+df_1930_n <- df_1930_n %>% scales::number()
+
+```
+
+So there are `r df_1930_joined_1_n` records from 1930 that get a code (including missing) after this first match, out of `r df_1930_n`. This is `r pct_share` of the total.
+
+### Matching round 2
+
+```{r}
+still_remain <- df_1930 %>% 
+  anti_join(df_1910) %>% 
+  count() %>% 
+  pull() %>% 
+  scales::number()
+
+remaining_titles <- df_1930 %>% 
+  anti_join(df_1910) %>% 
+  count(yrke) %>% 
+  count() %>% 
+  pull() %>% 
+  scales::number()
+```
+
+So `r still_remain` observations remain without any occupational hisco, with `r remaining_titles` different titles.
+
+The most common occupations that are not yet matched are:
+
+```{r}
+df_1930 %>% 
+  select(id, yrke) %>% 
+  anti_join(df_1910) %>% 
+  count(yrke, sort = T) %>% 
+  head(20) %>% 
+  gt() %>% 
+  tab_header(title = "Unmatched titles",
+             subtitle = "After first matching") %>% 
+  cols_label(yrke = "Title",
+             n = "Number of records")
+```
+
+So there are two main types of titles: new jobs (e.g. bilreparatör) and multiple occupations e.g. (jordbruksarbetare skogsarbetare).
+
+To overcome the second type we can just take the first word from the title and match again.
+
+```{r}
+df_1930_joined_2 <- df_1930 %>%
+  anti_join(df_1910) %>%
+  mutate(words = str_count(yrke, "\\w+")) %>%
+  mutate(yrke_1 = str_squish(str_remove(yrke, " .*"))) %>%
+  inner_join(df_1910, by = c("yrke_1" = "yrke"))
+
+df_1930_joined_2 <- df_1930_joined_2 %>% 
+  select(id, yrke, occ_hisco)
+```
+
+```{r}
+#| echo: false
+
+df_1930_joined_2_n <- df_1930_joined_2 %>% count() %>% pull() %>% scales::number()
+```
+
+Having matched again, we get another `r df_1930_joined_2_n` matches.
+
+Here we are assuming that the first listed occupation is the most important.
+
+**(We can come back and get the second occupation too if it seems worthwhile)**
+
+### Matching round 3
+
+```{r}
+#| echo: false
+
+n_remaining_obs <- df_1930 %>%
+  anti_join(df_1910) %>%
+  mutate(words = str_count(yrke, "\\w+")) %>%
+  mutate(yrke_1 = str_squish(str_remove(yrke, " .*"))) %>%
+  anti_join(df_1910, by = c("yrke_1" = "yrke")) %>% 
+  count() %>% pull() %>% scales::number()
+
+n_remaining_titles <- df_1930 %>%
+  anti_join(df_1910) %>%
+  mutate(words = str_count(yrke, "\\w+")) %>%
+  mutate(yrke_1 = str_squish(str_remove(yrke, " .*"))) %>%
+  anti_join(df_1910, by = c("yrke_1" = "yrke")) %>% 
+  count(yrke) %>% count() %>% 
+  pull() %>% scales::number()
+```
+
+Now we are left with `r n_remaining_obs` records, with `r n_remaining_titles` distinct titles. 
+
+The most common ones are shown in the table below.
+
+```{r}
+df_1930 %>%
+  anti_join(df_1910) %>%
+  mutate(words = str_count(yrke, "\\w+")) %>%
+  mutate(yrke_1 = str_squish(str_remove(yrke, " .*"))) %>%
+  anti_join(df_1910, by = c("yrke_1" = "yrke")) %>% 
+  count(yrke, sort = T) %>% 
+  head(20) %>% 
+  gt() %>% 
+  tab_header(title = "Unmatched titles",
+             subtitle = "After second matching") %>% 
+  cols_label(yrke = "Title",
+             n = "Number of records")
+```
+
+```{r}
+df_1930 %>%
+  anti_join(df_1910) %>%
+  mutate(words = str_count(yrke, "\\w+")) %>%
+  mutate(yrke_1 = str_squish(str_remove(yrke, " .*"))) %>%
+  anti_join(df_1910, by = c("yrke_1" = "yrke")) %>% 
+  add_count(yrke)
+```
+
+We will do some of these manually. We get to 44 percent of the remaning observations by doing 500. Let's see how we go.
+
+```{r}
+df_1930 %>%
+  anti_join(df_1910) %>%
+  mutate(words = str_count(yrke, "\\w+")) %>%
+  mutate(yrke_1 = str_squish(str_remove(yrke, " .*"))) %>%
+  anti_join(df_1910, by = c("yrke_1" = "yrke")) %>% 
+  count(yrke, sort = T) %>%
+  mutate(
+    rn = row_number() - 1,
+    gn = rn - rn %% 50
+  ) %>%
+  group_by(gn) %>%
+  summarise(total_obs = sum(n)) %>%
+  mutate(
+    gn = gn + 50,
+    pct = total_obs / 29802,
+    pct_cumsum = cumsum(pct),
+    flag = case_when(
+      gn == 500 ~ TRUE,
+      TRUE ~ FALSE
+      )
+  ) %>% 
+  head(30) %>% 
+  ggplot(aes(gn, pct_cumsum, fill = flag)) +
+  geom_col(show.legend = F) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(x = "Number of next occupations",
+       y = "Percent of observations that get assinged a hisco")
+```
+
+### Completition rate
+
+How much of the 1930 census remains after our three matches?
+
+```{r}
+#| echo: false
+
+df_1930_n <- df_1930_n %>% str_remove_all(., " ") %>%  as.numeric()
+
+df_1930_joined_1_n <- df_1930_joined_1_n %>% str_remove_all(., " ") %>%  as.numeric()
+
+df_1930_joined_2_n <- df_1930_joined_2_n %>% str_remove_all(., " ") %>%  as.numeric()
+
+n_remaining_obs <- n_remaining_obs %>% str_remove_all(., " ") %>%  as.numeric()
+
+n_remaining_obs <- n_remaining_obs*0.43
+
+library(ggrepel)
+
+tibble(total = df_1930_n, match_1 = df_1930_joined_1_n, match_2 = df_1930_joined_2_n, match_3 = n_remaining_obs) %>%
+  pivot_longer(-total) %>%
+  mutate(share = value / total) %>%
+  mutate(remainder = 1 - sum(share)) %>%
+  select(name, share, remainder) %>%
+  pivot_wider(names_from = name, values_from = share) %>%
+  pivot_longer(everything()) %>%
+  mutate(order = c(1, 4, 3, 2)) %>%
+  mutate(name = str_replace_all(name, "_", " "),
+         name = str_to_title(name),
+         lab = scales::percent(value, accuracy = 0.01)) %>%
+  ggplot(aes(1, value, fill = name, label = lab)) +
+  geom_col() +
+  geom_label_repel(show.legend = F)
+```
+
+### Quality checking
+
+We are going to write out the 100 most common occupations and another 100 from elsewhere in the distribution and check by hand whether the crosswalk from the 1910 census is of high enough quality.
+
+```{r}
+#| echo: false
+
+df_1930_joined_intermediate <- df_1930_joined_1 %>% 
+  bind_rows(df_1930_joined_2) %>% 
+  arrange(id) %>% 
+  count(yrke, occ_hisco, sort = T)
+
+crosswalk <- readxl::read_excel(here::here("data/occhisco_to_hisco_crosswalk.xls")) %>% 
+  janitor::clean_names()
+
+crosswalk <- crosswalk %>% 
+  mutate(napp_code_occhisco = as.numeric(napp_code_occhisco)) %>% 
+  select(napp_title, napp_code_occhisco)
+
+df_1930_joined_intermediate <- df_1930_joined_intermediate %>% 
+  left_join(crosswalk, by = c("occ_hisco" = "napp_code_occhisco"))
+```
+
+The top 100 occupations and corresponding codes are
+
+```{r}
+df_1930_joined_intermediate %>%
+  mutate(rank = row_number()) %>%
+  relocate(rank, .before = yrke) %>%
+  select(-n) %>%
+  head(50) %>%
+  gt() %>%
+  tab_header(
+    title = "Most common occupational titles and codes",
+    subtitle = "In the 1930 census"
+  ) %>%
+  cols_label(
+    rank = "Rank",
+    yrke = "Title",
+    occ_hisco = "Code",
+    napp_title = "NAPP Title"
+  )
+```
+
+The 100 occupations drawn at random are
+
+```{r}
+set.seed(234)
+
+df_1930_joined_intermediate %>%
+  mutate(rank = row_number()) %>%
+  relocate(rank, .before = yrke) %>%
+  select(-n) %>%
+  slice_sample(n = 50) %>%
+  gt() %>%
+  tab_header(
+    title = "100 other occupational titles and codes",
+    subtitle = "In the 1930 census"
+  ) %>%
+  cols_label(
+    rank = "Rank",
+    yrke = "Title",
+    occ_hisco = "Code",
+    napp_title = "NAPP Title"
+  )
+```
+
+
+
+
