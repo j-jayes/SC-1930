@@ -233,6 +233,8 @@ df_movers_in <- df %>%
 ## Who has the steepest age gradient in income
 
 ```{r}
+#| column: page
+
 library(geomtextpath)
 
 order <- df_reg %>%
@@ -253,6 +255,8 @@ order
 Now I want to see when the downturn happens?
 
 ```{r}
+#| column: page
+
 df_reg %>%
   filter(!is.na(hisclass_group_abb)) %>%
   group_by(hisclass_group_abb, age) %>%
@@ -268,6 +272,8 @@ I have a problem. Unskilled workers earn more than skilled workers until age 60.
 Let's check what the most common occupations are within each group? Maybe the skilled workers are categorised wrong?
 
 ```{r}
+#| column: page
+
 library(tidytext)
 
 df_reg %>% 
@@ -489,6 +495,7 @@ What is the distribution of migration distance by parish of birth and occupation
 
 ```{r}
 #| column: page
+#| fig-height: 10
 
 df_reg %>%
   filter(!is.na(hisclass_group_abb)) %>%
@@ -669,6 +676,8 @@ transitions_25_30 = df_reg %>%
 What do the transitions in terms of hisclass look like between 1925 and 1930?
 
 ```{r}
+#| column: page
+
 cols <- paletteer::paletteer_d("ggsci::blue_material", n = 10) %>%
   as.character() %>% paste0() 
 
@@ -697,6 +706,8 @@ transitions_25_30 %>%
 Or by percentage share
 
 ```{r}
+#| column: page
+
 transitions_25_30 %>%
   count(hisclass_group_abb_25, hisclass_group_abb) %>%
   filter(
@@ -729,6 +740,8 @@ transitions_25_30 %>%
 Now try to distinguish between groups
 
 ```{r}
+#| column: page
+
 cols <- paletteer::paletteer_d("ggsci::red_material", n = 10) %>%
   as.character() %>% paste0() 
 
@@ -762,6 +775,8 @@ transitions_25_30 %>%
 Or in pct terms
 
 ```{r}
+#| column: page
+
 cols <- paletteer::paletteer_d("ggsci::green_material", n = 10) %>%
   as.character() %>% paste0() 
 
@@ -799,6 +814,8 @@ transitions_25_30 %>%
 
 
 ```{r}
+#| column: page
+
 transitions_25_30 %>%
   count(hisclass_group_abb_25, hisclass_group_abb, electricity_parish_born) %>%
   filter(
@@ -918,20 +935,17 @@ Maybe we need to think about the group that comes in
 
 ### Checking for information in other columns
 
-```{r}
-df %>% 
-  select(yrke, hushtyp:biyrkkod) %>% view()
-```
-
 ## 18 vs 15 age cutoff
 
 ```{r}
+#| column: page
+
 common_occs <- df %>% 
   filter(yrke.y != "") %>% 
   count(yrke.y, sort = T)
 
 common_occs_small <- common_occs %>% 
-  slice_max(order_by = n, n = 11) %>% 
+  slice_max(order_by = n, n = 12) %>% 
   bind_rows(tibble(yrke.y = "Piga", n = 1))
 
 df_age_dists <- df %>% 
