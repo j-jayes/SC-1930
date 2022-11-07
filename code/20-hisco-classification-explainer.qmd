@@ -405,7 +405,7 @@ df_1930 %>%
   add_count(yrke)
 ```
 
-We will do some of these manually. We get to 44 percent of the remaning observations by doing 500. Let's see how we go.
+We will do some of these manually. We get to 44 percent of the remaining observations by doing 500. Anders Larsson and I have hand coded these, and the classification is available at the excel sheet [here]().
 
 ```{r}
 df_1930 %>%
@@ -436,6 +436,10 @@ df_1930 %>%
   labs(x = "Number of next occupations",
        y = "Percent of observations that get assinged a hisco")
 ```
+
+
+
+
 
 ### Completition rate
 
@@ -502,7 +506,7 @@ df_1930_joined_intermediate %>%
   mutate(rank = row_number()) %>%
   relocate(rank, .before = yrke) %>%
   select(-n) %>%
-  head(50) %>%
+  head(100) %>%
   gt() %>%
   tab_header(
     title = "Most common occupational titles and codes",
@@ -525,7 +529,7 @@ df_1930_joined_intermediate %>%
   mutate(rank = row_number()) %>%
   relocate(rank, .before = yrke) %>%
   select(-n) %>%
-  slice_sample(n = 50) %>%
+  slice_sample(n = 100) %>%
   gt() %>%
   tab_header(
     title = "100 other occupational titles and codes",
