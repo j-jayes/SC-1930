@@ -405,7 +405,7 @@ df_1930 %>%
   add_count(yrke)
 ```
 
-We will do some of these manually. We get to 44 percent of the remaining observations by doing 500. Anders Larsson and I have hand coded these, and the classification is available at the excel sheet [here]().
+We will do some of these manually. We get to 44 percent of the remaining observations by doing 500. Anders Larsson and I have hand coded these, and the classification is available at the excel sheet [here](https://github.com/j-jayes/SC-1930).
 
 ```{r}
 df_1930 %>%
@@ -437,9 +437,18 @@ df_1930 %>%
        y = "Percent of observations that get assinged a hisco")
 ```
 
+```{r}
+codes_1930_by_hand <- readxl::read_excel(here::here("data", "occupations", "1930-Census-titles-to-match-v3-04-11-22.xlsx"))
 
+codes_1930_by_hand <- codes_1930_by_hand %>% 
+  filter(row_number() <= 240) %>% 
+  select(yrke, occ_hisco = OCCHISCO)
 
+df_1930_joined_3 <- df_1930 %>% 
+  select(id, yrke) %>% 
+  inner_join(codes_1930_by_hand)
 
+```
 
 ### Completition rate
 
@@ -476,36 +485,59 @@ tibble(total = df_1930_n, match_1 = df_1930_joined_1_n, match_2 = df_1930_joined
   geom_label_repel(show.legend = F)
 ```
 
-### Quality checking
-
-We are going to write out the 100 most common occupations and another 100 from elsewhere in the distribution and check by hand whether the crosswalk from the 1910 census is of high enough quality.
 
 ```{r}
 #| echo: false
 
 df_1930_joined_intermediate <- df_1930_joined_1 %>% 
   bind_rows(df_1930_joined_2) %>% 
-  arrange(id) %>% 
-  count(yrke, occ_hisco, sort = T)
+  bind_rows(df_1930_joined_3) %>% 
+  arrange(id)
 
-crosswalk <- readxl::read_excel(here::here("data/occhisco_to_hisco_crosswalk.xls")) %>% 
+# get the crosswalk for NAPP and hisco codes
+crosswalk_hisco <- readxl::read_excel(here::here("data/occhisco_to_hisco_crosswalk.xls")) %>% 
   janitor::clean_names()
 
-crosswalk <- crosswalk %>% 
+crosswalk_hisco <- crosswalk_hisco %>% 
   mutate(napp_code_occhisco = as.numeric(napp_code_occhisco)) %>% 
-  select(napp_title, napp_code_occhisco)
+  select(napp_title, napp_code_occhisco, hisco_code = hisco_nr) %>% 
+  mutate(hisco_code = as.numeric(hisco_code))
+
+# join data to crosswalk
+df_1930_joined_intermediate <- df_1930_joined_intermediate %>% 
+  left_join(crosswalk_hisco, by = c("occ_hisco" = "napp_code_occhisco"))
+
+# get the crosswalk for hisclass
+crosswalk_hisclass <- read_rds(here::here("data", "occupations", "hisco_hisclass_crosswalk.rds")) %>% 
+  rename(hisco_code = hisco,
+         hisclass_code = hisclass)
 
 df_1930_joined_intermediate <- df_1930_joined_intermediate %>% 
-  left_join(crosswalk, by = c("occ_hisco" = "napp_code_occhisco"))
+  left_join(crosswalk_hisclass)
+
+# df_1930_joined_intermediate %>% 
+#   write_rds(here::here("data", "occupations", "df_1930_assigned_occ_hisco_hisco_hisclass.rds"))
+
+# library(haven)
+# 
+# df_1930_joined_intermediate %>%
+#   write_dta(here::here("data", "occupations", "df_1930_assigned_occ_hisco_hisco_hisclass.dta"))
 ```
 
-The top 100 occupations and corresponding codes are
+
+### Quality checking
+
+We are going to write out the 100 most common occupations and another 100 from elsewhere in the distribution and check by hand whether the assignment that we have done is of good enough quality.
+
+The top 100 occupations and corresponding codes are:
 
 ```{r}
 df_1930_joined_intermediate %>%
+  add_count(yrke) %>% 
+  arrange(desc(n)) %>% 
+  distinct(yrke, occ_hisco, napp_title, hisco_code, hisclass_code) %>% 
   mutate(rank = row_number()) %>%
   relocate(rank, .before = yrke) %>%
-  select(-n) %>%
   head(100) %>%
   gt() %>%
   tab_header(
@@ -515,20 +547,23 @@ df_1930_joined_intermediate %>%
   cols_label(
     rank = "Rank",
     yrke = "Title",
-    occ_hisco = "Code",
-    napp_title = "NAPP Title"
+    occ_hisco = "NAPP Code",
+    napp_title = "NAPP Title",
+    hisco_code = "Hisco code"
   )
 ```
 
-The 100 occupations drawn at random are
+The 100 occupations drawn at random are:
 
 ```{r}
 set.seed(234)
 
 df_1930_joined_intermediate %>%
+  add_count(yrke) %>% 
+  arrange(desc(n)) %>% 
+  distinct(yrke, occ_hisco, napp_title, hisco_code, hisclass_code) %>% 
   mutate(rank = row_number()) %>%
-  relocate(rank, .before = yrke) %>%
-  select(-n) %>%
+  relocate(rank, .before = yrke) %>% 
   slice_sample(n = 100) %>%
   gt() %>%
   tab_header(
@@ -538,11 +573,12 @@ df_1930_joined_intermediate %>%
   cols_label(
     rank = "Rank",
     yrke = "Title",
-    occ_hisco = "Code",
-    napp_title = "NAPP Title"
+    occ_hisco = "NAPP Code",
+    napp_title = "NAPP Title",
+    hisco_code = "Hisco code"
   )
 ```
 
-
+This looks satisfying enough. We can come back to this if we need to.
 
 
