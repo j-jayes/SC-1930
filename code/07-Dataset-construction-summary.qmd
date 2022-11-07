@@ -13,11 +13,10 @@ This document then needs a summary with just the codebook.
 
 ```{r}
 library(tidyverse)
-df <- read.csv(here::here("data", "Folk1930.csv"), sep = "\t")
+df <- read.csv(here::here("data", "Folk1930.csv"), sep = "\t", fileEncoding="latin1")
 
 df <- df %>% as_tibble() %>% 
   janitor::clean_names()
-
 ```
 
 
@@ -28,14 +27,13 @@ df <- df %>% as_tibble() %>%
 ```{r}
 codebook <- read_rds("data/codebook_1930.rds")
 
-
 df_augmented <- df %>%
   mutate(
     yob = parse_number(fodar),
     age = 1930 - yob,
     adult_1930 = case_when(
-      # turns 18 in 1930
-      yob <= 1912 ~ "Adult",
+      # turns 15 in 1930
+      yob <= 1915 ~ "Adult",
       TRUE ~ "Youth"
     ),
     adult_1930 = factor(adult_1930)
@@ -261,10 +259,10 @@ df_augmented <- read_rds("data/augmented/treat_groups_100_150_250.rds") %>%
 df <- df %>%
   left_join(df_augmented)
 
-df_augmented <- read_rds("data/augmented/hisco_5.rds")
-
-df <- df %>%
-  left_join(df_augmented)
+# df_augmented <- read_rds("data/augmented/hisco_5.rds")
+# 
+# df <- df %>%
+#   left_join(df_augmented)
 
 df_augmented <- read_rds("data/augmented/distance_from_birth_parish_to_current_parish.rds")
 
@@ -284,6 +282,53 @@ df_augmented <- df_augmented %>%
 
 df <- df %>%
   left_join(df_augmented)
+
+df_augmented <- read_rds(here::here("data", "occupations", "df_1930_assigned_occ_hisco_hisco_hisclass.rds"))
+
+df <- df %>%
+  left_join(df_augmented, by = c("id"))
+```
+
+This needs to be refactored by I can't do it right now.
+
+```{r}
+df <- df %>% 
+  mutate(female = case_when(
+    kon == "K" ~ 1,
+    kon == "M" ~ 0,
+    TRUE ~ NA_real_
+  ))
+
+
+# creating the hisclass groups
+# following more power to the people
+df <- df %>% 
+  mutate(hisclass_code_abb = case_when(
+    hisclass_code %in% c(1, 2) ~ 1,
+    hisclass_code %in% c(3, 4, 5) ~ 2,
+    hisclass_code == 6 ~ 3,
+    hisclass_code == 7 ~ 4,
+    hisclass_code == 8 ~ 5,
+    hisclass_code %in% c(9, 10) ~ 6,
+    hisclass_code %in% c(11, 12) ~ 7,
+    TRUE ~ NA_real_
+  ))
+
+df <- df %>% 
+  mutate(hisclass_group_abb = case_when(
+    hisclass_code %in% c(1, 2) ~ "Elite",
+    hisclass_code %in% c(3, 4, 5) ~ "White collar",
+    hisclass_code == 6 ~ "Foremen",
+    hisclass_code == 7 ~ "Medium-skilled workers",
+    hisclass_code == 8 ~ "Farmers and fishermen",
+    hisclass_code %in% c(9, 10) ~ "Low-skilled workers",
+    hisclass_code %in% c(11, 12) ~ "Unskilled workers",
+    TRUE ~ NA_character_
+  ))
+
+df <- df %>% 
+  mutate(hisclass_group_abb = fct_reorder(hisclass_group_abb, hisclass_code_abb),
+         hisclass_group_abb = fct_relevel(hisclass_group_abb, "Farmers and fishermen"))
 ```
 
 Write out

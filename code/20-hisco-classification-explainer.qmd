@@ -581,4 +581,10 @@ df_1930_joined_intermediate %>%
 
 This looks satisfying enough. We can come back to this if we need to.
 
+```{r}
+df_1930_joined_intermediate %>% 
+  count(hisclass_code) %>% 
+  ggplot(aes(n, factor(hisclass_code))) +
+  geom_col()
+```
 
