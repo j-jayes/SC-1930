@@ -515,7 +515,7 @@ crosswalk_hisclass <- read_rds(here::here("data", "occupations", "hisco_hisclass
 df_1930_joined_intermediate <- df_1930_joined_intermediate %>% 
   left_join(crosswalk_hisclass)
 
-# df_1930_joined_intermediate %>% 
+# df_1930_joined_intermediate %>%
 #   write_rds(here::here("data", "occupations", "df_1930_assigned_occ_hisco_hisco_hisclass.rds"))
 
 # library(haven)

@@ -46,49 +46,6 @@ theme_set(theme_light())
 ```
 
 ```{r}
-df <- df %>% 
-  mutate(female = case_when(
-    kon == "K" ~ 1,
-    kon == "M" ~ 0,
-    TRUE ~ NA_real_
-  ))
-
-
-# creating the hisclass groups
-# following more power to the people
-df <- df %>% 
-  mutate(hisclass_code_abb = case_when(
-    hisclass_code %in% c(1, 2) ~ 1,
-    hisclass_code %in% c(3, 4, 5) ~ 2,
-    hisclass_code == 6 ~ 3,
-    hisclass_code == 7 ~ 4,
-    hisclass_code == 8 ~ 5,
-    hisclass_code %in% c(9, 10) ~ 6,
-    hisclass_code %in% c(11, 12) ~ 7,
-    TRUE ~ NA_real_
-  ))
-
-df <- df %>% 
-  mutate(hisclass_group_abb = case_when(
-    hisclass_code %in% c(1, 2) ~ "Elite",
-    hisclass_code %in% c(3, 4, 5) ~ "White collar",
-    hisclass_code == 6 ~ "Foremen",
-    hisclass_code == 7 ~ "Medium-skilled workers",
-    hisclass_code == 8 ~ "Farmers and fishermen",
-    hisclass_code %in% c(9, 10) ~ "Low-skilled workers",
-    hisclass_code %in% c(11, 12) ~ "Unskilled workers",
-    TRUE ~ NA_character_
-  ))
-
-df <- df %>% 
-  mutate(hisclass_group_abb = fct_reorder(hisclass_group_abb, hisclass_code_abb),
-         
-         # hisclass_group_abb = fct_relevel(hisclass_group_abb, "Farmers and fishermen")
-         )
-
-df %>% 
-  count(hisclass_group_abb)
-
 library(ggridges)
 
 df %>% 
@@ -129,6 +86,15 @@ df <- df %>%
     schooling %in% c("University", "Exam from higher educational institution, but not from a university") ~ "Post-secondary and university",
     TRUE ~ NA_character_
   ))
+
+# fixing hushållerska 
+df <- df %>%
+  mutate(hisclass_group_abb = as.character(hisclass_group_abb)) %>% 
+  mutate(hisclass_group_abb = case_when(
+    hisco_code %in% c(22490, 54020) ~ "Low-skilled workers",
+    TRUE ~ hisclass_group_abb
+  )) %>% 
+  mutate(hisclass_group_abb = factor(hisclass_group_abb))
 
 
 df_reg <- df 
@@ -362,19 +328,189 @@ When comparing the distributions of income by migrant status and occupational gr
 
 ```{r}
 #| column: page
-#| fig-height: 12
+#| fig-height: 10
 
-df_plot %>% 
+df_plot %>%
   filter(!is.na(hisclass_group_abb)) %>%
   ggplot(aes(log(inkomst + 1), fill = group)) +
-  geom_boxplot(alpha = .5, outlier.alpha = .1) +
+  geom_boxplot(alpha = .9, outlier.alpha = .1) +
   facet_wrap(~hisclass_group_abb, nrow = 7) +
-  scale_fill_brewer(palette = "Dark2") +
+  scale_fill_brewer(palette = "Paired",
+                    guide = guide_legend(reverse = TRUE)) +
   scale_x_continuous(limits = c(4, NA)) +
   labs(
     x = "Log income",
     fill = "Group",
     title = "Distribution of income by migratory status and occupational group"
+  )
+```
+
+Try again with density ridges
+
+```{r}
+#| column: page
+#| fig-height: 10
+
+df_plot %>%
+  filter(!is.na(hisclass_group_abb)) %>%
+  ggplot(aes(x = log(inkomst + 1), y = group, fill = group)) +
+  stat_density_ridges(quantile_lines = TRUE, quantiles = 2) +
+  facet_wrap(~hisclass_group_abb, ncol = 2) +
+  scale_fill_brewer(palette = "Paired") +
+  scale_x_continuous(limits = c(4, NA)) +
+  theme(legend.position = "none") +
+  labs(
+    x = "Log income",
+    fill = "Group",
+    title = "Distribution of income by migratory status and occupational group"
+  )
+```
+
+```{r}
+#| column: page
+#| fig-height: 10
+
+df_plot %>% 
+  filter(!is.na(hisclass_group_abb)) %>%
+  ggplot(aes(x = log(inkomst + 1), y = group, fill = group)) +
+  stat_density_ridges(quantile_lines = TRUE, quantiles = 2) +
+  # facet_wrap(~hisclass_group_abb, nrow = 7) +
+  scale_fill_brewer(palette = "Paired") +
+  scale_x_continuous(limits = c(4, NA)) +
+  theme(legend.position = "none") +
+  labs(
+    x = "Log income",
+    fill = "Group",
+    title = "Distribution of income by migratory status and occupational group"
+  )
+```
+
+Skill distributions
+
+```{r}
+#| column: page
+
+df_reg <- df_reg %>%
+  mutate(
+    hisco_code_char = as.character(hisco_code),
+    hisco_code_start = case_when(
+      nchar(hisco_code_char) < 4 ~ NA_real_,
+      nchar(hisco_code_char) == 4 ~ 0,
+      TRUE ~ as.numeric(str_extract(hisco_code_char, "^[0-9]"))
+    ),
+    hisco_major_group_code = case_when(
+      hisco_code_start %in% c(0, 1) ~ 1,
+      hisco_code_start %in% c(7, 8, 9) ~ 7,
+      TRUE ~ hisco_code_start
+    )
+  ) %>%
+  select(-hisco_code_char, -hisco_code_start) %>%
+  mutate(hisco_major_group_name = case_when(
+    hisco_major_group_code == 1 ~ "PROFESSIONAL, TECHNICAL AND RELATED WORKERS",
+    hisco_major_group_code == 2 ~ "ADMINISTRATIVE AND MANAGERIAL WORKERS",
+    hisco_major_group_code == 3 ~ "CLERICAL AND RELATED WORKERS",
+    hisco_major_group_code == 4 ~ "SALES WORKERS",
+    hisco_major_group_code == 5 ~ "SERVICE WORKERS",
+    hisco_major_group_code == 6 ~ "AGRICULTURAL, ANIMAL HUSBANDRY AND FORESTRY WORKERS, FISHERMEN AND HUNTERS",
+    hisco_major_group_code == 7 ~ "PRODUCTION AND RELATED WORKERS, TRANSPORT EQUIPMENT OPERATORS AND LABOURERS",
+  )) %>%
+  mutate(
+    hisco_major_group_name = str_to_sentence(hisco_major_group_name),
+    hisco_major_group_name = fct_reorder(hisco_major_group_name, hisco_major_group_code)
+  )
+
+
+df_reg %>% 
+  filter(!is.na(hisco_major_group_name)) %>% 
+  ggplot(aes(x = log_income, y = hisco_major_group_name, fill = hisco_major_group_name)) +
+  stat_density_ridges(quantile_lines = TRUE, quantiles = 2) +
+  scale_fill_brewer(palette = "Paired") +
+  scale_x_continuous(limits = c(4, NA)) +
+  theme(legend.position = "none") +
+  labs(x = "Log income",
+       y = NULL,
+       title = "Income distribution by HISCO major group")
+```
+
+Skill distribution density kernels
+
+```{r}
+#| column: page
+
+df_reg <- df_reg %>%
+  mutate(situation_group = case_when(
+    electricity_parish_born == 1 & electricity_parish_living_in == 0 ~ "Movers out of electricity parishes",
+    electricity_parish_born == 0 & electricity_parish_living_in == 1 ~ "Movers into electricity parishes",
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 ~ "Stayers in electricity parishes",
+    electricity_parish_born == 0 & electricity_parish_living_in == 0 ~ "Stayers in other parishes"
+  ))
+
+
+df_reg %>% 
+  ggplot(aes(hisco_major_group_code, y = situation_group, fill = situation_group)) +
+  stat_density_ridges(quantile_lines = TRUE, quantiles = 2) +
+  theme(legend.position = "none")
+```
+
+
+```{r}
+#| column: page
+
+df_reg %>%
+  group_by(situation_group) %>%
+  count(hisco_major_group_code) %>%
+  ggplot(aes(hisco_major_group_code, y = n, fill = situation_group)) +
+  geom_col() +
+  facet_wrap(~ situation_group, nrow = 4, scales = "free_y") +
+  theme(legend.position = "none") +
+  scale_x_continuous(labels = scales::number_format(), breaks = c(1:7)) +
+  labs(x = "HISCO major group (1 is highest)",
+       y = "Number of individuals")
+```
+
+
+```{r}
+#| column: page
+
+df_reg %>%
+  group_by(situation_group) %>%
+  count(hisco_major_group_code) %>%
+  mutate(pct_share = n / sum(n)) %>%
+  ungroup() %>%
+  ggplot(aes(factor(hisco_major_group_code), y = pct_share, fill = situation_group)) +
+  geom_col(position = "dodge") +
+  theme(legend.position = "right") +
+  scale_fill_brewer(palette = "Paired") +
+  scale_x_discrete(breaks = c(1:7)) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    x = "HISCO major group (1 is highest)",
+    y = "Number of individuals",
+    fill = NULL
+  )
+```
+
+```{r}
+#| column: page
+
+df_reg %>%
+  filter(!is.na(hisco_major_group_name)) %>% 
+  group_by(situation_group) %>%
+  count(hisco_major_group_name) %>%
+  mutate(pct_share = n / sum(n),
+         pct_share_lab = scales::percent(pct_share)) %>%
+  ungroup() %>%
+  ggplot(aes(y =factor(hisco_major_group_name), x = pct_share, fill = situation_group, label = pct_share_lab)) +
+  geom_col(position = "dodge") +
+  geom_label(position = position_dodge(width = 0.9), hjust = -.1, show.legend = F) +
+  theme(legend.position = "bottom") +
+  scale_fill_brewer(palette = "Paired") +
+  scale_y_discrete() +
+  scale_x_continuous(labels = scales::percent_format()) +
+  labs(
+    x = "HISCO major group (1 is highest)",
+    y = "Number of individuals",
+    fill = NULL
   )
 ```
 
@@ -400,11 +536,10 @@ library(gt)
 
 df_reg <- df_reg %>% 
   mutate(hisclass_group_abb = fct_relevel(hisclass_group_abb, "Farmers and fishermen"),
-         age_2 = age^2)
+         age_2 = age^2,
+         log_income = log(inkomst + 1))
 
-reg_out <- lm(inkomst ~ lives_in_parish_of_birth + hisclass_group_abb + schooling_abb + age + age_2 + female, data = df_reg)
-
-reg_out <- feols(inkomst ~ lives_in_parish_of_birth + hisclass_group_abb + schooling_abb + age + age_2 + female, data = df_reg)
+reg_out <- feols(log_income ~ lives_in_parish_of_birth + hisclass_group_abb + schooling_abb + age + age_2 + female, data = df_reg)
 
 reg_out %>%
   gtsummary::tbl_regression() %>%
@@ -417,7 +552,7 @@ reg_out %>%
 Yay! You get a higher income for being born in electricity parish and living in one now. Sig at one percent and large in magnitude. Stayers lose out less.
 
 ```{r}
-reg_out <- feols(inkomst ~ lives_in_parish_of_birth*electricity_parish_living_in + hisclass_group_abb + schooling_abb + age + age_2 + female, data = df_reg)
+reg_out <- feols(log_income ~ lives_in_parish_of_birth*electricity_parish_living_in + hisclass_group_abb + schooling_abb + age + age_2 + female, data = df_reg)
 
 reg_out %>%
   gtsummary::tbl_regression() %>%
@@ -428,7 +563,7 @@ reg_out %>%
 ### Try adding in parish fixed effects?
 
 ```{r}
-reg_out <- feols(inkomst ~ lives_in_parish_of_birth*electricity_parish_living_in + hisclass_group_abb + schooling_abb + age + age_2 + female | scbkod, data = df_reg)
+reg_out <- feols(log_income ~ lives_in_parish_of_birth*electricity_parish_living_in + hisclass_group_abb + schooling_abb + age + age_2 + female | scbkod, data = df_reg)
 
 reg_out %>%
   gtsummary::tbl_regression() %>%
@@ -438,14 +573,12 @@ reg_out %>%
 
 This throws out living in and electricity parish for collinearity `The variable 'electricity_parish_living_in' has been removed because of collinearity (see $collin.var).`
 
-
-
 In the second regression we look at the effect of the distance between your parish of birth and your parish of inhabitance in 1930, in kilometers. The coefficient is positive at 1.3, and is significant at the 1 percent level. This indicates a positive return to migration.
 
 We don't see a significant interaction effect between distance from birth parish to current parish.
 
 ```{r}
-reg_out <- feols(inkomst ~ dist_bp_to_cp_km*electricity_parish_living_in + hisclass_group_abb + schooling_abb + age + age_2 + female, data = df_reg)
+reg_out <- feols(log_income ~ dist_bp_to_cp_km*electricity_parish_living_in + hisclass_group_abb + schooling_abb + age + age_2 + female, data = df_reg)
 
 reg_out %>% gtsummary::tbl_regression() %>% 
   add_significance_stars() %>% 
@@ -584,7 +717,7 @@ Do people born in electricity parishes see a higher return to migration the same
 So we want to run a regression where income is dep var, and indepvar of interest is electricity_parish_born
 
 ```{r}
-reg_out <- lm(inkomst ~ electricity_parish_born + dist_bp_to_cp_km + hisclass_group_abb + age + female, data = df_reg)
+reg_out <- lm(log_income ~ electricity_parish_born + dist_bp_to_cp_km + hisclass_group_abb + age + female, data = df_reg)
 
 reg_out %>%
   gtsummary::tbl_regression() %>%
@@ -846,6 +979,121 @@ transitions_25_30 %>%
   tab_header(title = "Transition matrix by type of birth parish",
              subtitle = "Between 1925 and 1930 - percentage of HISCLASS in 1925")  %>% 
   cols_align(hisclass_group_abb_25, align = "left")
+```
+
+## Transitions by hisco main group
+
+Now we are looking at transitions by occupational group rather than HISCLASS.
+
+```{r}
+df_reg_25 <- df_reg %>%
+  # we need only the id and occupation variables
+  select(id, yrke = yrke25) %>% 
+  mutate(
+    # this makes a copy of the original column, that we then modify
+    yrke_copy = yrke,
+    yrke = str_to_lower(yrke),
+    # We create a column for former, indicated by fd. We remove this from the original column.
+    # we can use this later to improve the hisclass classification
+
+    flag_fd = ifelse(str_detect(yrke, "f\\.d\\.|f\\.d|^fd| fd|f d\\.| f\\. d\\.|f\\. d$"),TRUE, FALSE),
+    yrke = str_remove_all(yrke, "f\\.d\\.|f\\.d|^fd| fd|f d\\.| f\\. d\\.|f\\. d$"),
+    # flag for only doing the occupation temporarily
+    flag_fn = ifelse(str_detect(yrke, "f\\.n\\.|f\\. n\\.|f\\. n"),TRUE, FALSE),
+    yrke = str_remove_all(yrke, "f\\.n\\.|f\\. n\\.|f\\. n"),
+
+    # create a column for place of work
+    yrke_pow = str_extract(yrke, " hos .*| vid .*| i .*| på.*| å .*| h\\. "),
+    yrke = str_remove_all(yrke, " hos .*| vid .*| i .*| på.*| å .*| h\\. "),
+
+    # create a column for former occupation
+    yrke_f_occ = str_extract(yrke, " f\\..*"),
+    
+    # tidy up the remaining occpations
+    yrke = str_remove_all(yrke, " f\\..*"),
+    yrke = str_remove_all(yrke, " fa da"),
+    yrke = str_remove_all(yrke, "^fa | fa$| fa "),
+    yrke = str_remove_all(yrke, "^fada | fada$| fada "),
+    yrke = str_remove_all(yrke, "^da | da$| da ")
+  ) %>%
+  mutate(flag_for_multi_occs = ifelse(str_detect(yrke_copy, "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$"
+      ) &
+        str_detect(yrke_copy, " [A-Z].*"), yes = TRUE, no = FALSE
+    )
+  ) %>%
+  mutate(
+    yrke_clean = str_squish(str_remove(yrke, "f\\.d\\.$|f\\.d$|^fd$| fd$|f d\\.$| f\\. d\\.$|f\\. d$| f\\.$")),
+    yrke_f_occ = case_when(
+      flag_for_multi_occs == TRUE ~ word(yrke_clean, -1),
+      TRUE ~ NA_character_
+    ),
+    yrke = case_when(
+      flag_for_multi_occs == TRUE ~ str_remove(yrke, " .*"),
+      TRUE ~ yrke
+    )
+  ) %>%
+  select(-yrke_clean) %>% 
+  mutate(
+    # remove numbers that begin a word
+    yrke = str_remove_all(yrke, "[0-9]."),
+    yrke = str_remove_all(yrke, "[:punct:]"),
+    yrke = str_to_lower(yrke),
+    yrke = str_squish(yrke)
+  ) %>%
+  # tidy up funny letters
+  mutate(yrke_1 = word(yrke, 1))
+
+df_reg_25 <- df_reg_25 %>% 
+  select(id, yrke_25 = yrke) 
+
+lookup <- df_reg %>% 
+  select(yrke = yrke.y, hisco_major_group_name) %>% 
+  distinct()
+
+df_reg_25 <- df_reg_25 %>% 
+  left_join(lookup, by = c("yrke_25" = "yrke")) %>% 
+  rename(hisco_major_group_name_25 = hisco_major_group_name)
+
+transitions_25_30 = df_reg %>% 
+  select(id, hisco_major_group_name, electricity_parish_living_in, electricity_parish_born) %>% 
+  inner_join(df_reg_25, by = "id")
+```
+
+```{r}
+cols <- paletteer::paletteer_d("ggsci::orange_material", n = 10) %>%
+  as.character() %>% paste0() 
+
+
+transitions_25_30 %>%
+  count(hisco_major_group_name_25, hisco_major_group_name, electricity_parish_born) %>%
+  filter(
+    !is.na(hisco_major_group_name_25),
+    !is.na(hisco_major_group_name)
+  ) %>%
+  group_by(hisco_major_group_name_25, electricity_parish_born) %>% 
+  mutate(pct_share = n / sum(n)) %>% 
+  ungroup() %>% 
+  select(-n) %>% 
+  pivot_wider(names_from = hisco_major_group_name, values_from = pct_share) %>%
+  mutate(electricity_parish_born = case_when(
+    electricity_parish_born == 0 ~ "Born outside electricity parish",
+    TRUE ~ "Born in electricity parish"
+  )) %>% 
+  group_by(electricity_parish_born) %>% 
+  gt() %>%
+  data_color(
+    columns = - hisco_major_group_name_25,
+    colors  = scales::col_numeric(
+      palette = cols,
+      domain = NULL
+    )
+  ) %>% 
+  tab_spanner(columns = `Professional, technical and related workers`:`Production and related workers, transport equipment operators and labourers`, label = "HISCO major group in 1930") %>% 
+  cols_label(hisco_major_group_name_25 = "HISCO major group in in 1925") %>% 
+  fmt_percent(columns = -hisco_major_group_name_25) %>% 
+  tab_header(title = "Transition matrix by type of birth parish",
+             subtitle = "Between 1925 and 1930 - percentage of HISCO major group in 1925")  %>% 
+  cols_align(hisco_major_group_name_25, align = "left")
 ```
 
 

@@ -327,8 +327,33 @@ df <- df %>%
   ))
 
 df <- df %>% 
-  mutate(hisclass_group_abb = fct_reorder(hisclass_group_abb, hisclass_code_abb),
-         hisclass_group_abb = fct_relevel(hisclass_group_abb, "Farmers and fishermen"))
+  mutate(hisclass_group_abb = fct_reorder(hisclass_group_abb, hisclass_code_abb))
+
+# code up schooling
+df <- df %>%
+  mutate(schooling = case_when(
+    skola == "" ~ NA_character_,
+    skola == "0" ~ "No school, no information about ability to read or write",
+    skola == "1" ~ "No school, able to read and write",
+    skola == "2" ~ "Can read but can’t write",
+    skola == "3" ~ "Primary school",
+    skola == "4" ~ "Additional course after primary school",
+    skola == "5" ~ "Secondary school without high school exam",
+    skola == "7|6" ~ "High school exam without exam from higher educational institution",
+    skola == "8" ~ "Exam from higher educational institution, but not from a university",
+    skola == "9" ~ "University",
+    skola == "x|X" ~ "No school, no information about ability to read or write",
+    skola == "y|Y" ~ "No school, able to read and write",
+    TRUE ~ NA_character_
+  )) %>%
+  mutate(schooling_abb = case_when(
+    schooling == "No school, no information about ability to read or write" ~ NA_character_,
+    schooling %in% c("Can read but can’t write", "No school, able to read and write") ~ "Literate",
+    schooling %in% c("Primary school") ~ "Primary school",
+    schooling %in% c("Secondary school without high school exam", "Additional course after primary school") ~ "Post primary schooling",
+    schooling %in% c("University", "Exam from higher educational institution, but not from a university") ~ "Post-secondary and university",
+    TRUE ~ NA_character_
+  ))
 ```
 
 Write out
@@ -336,6 +361,8 @@ Write out
 ```{r}
 library(haven)
 df %>% 
+  select(-yrke.x) %>% 
+  rename(yrke = yrke.y) %>% 
   write_dta("data/stata/folk_1930_augmented.dta", version = 15)
 
 df %>% write_rds("data/augmented/df_1930_augmented.rds", compress = "gz")
