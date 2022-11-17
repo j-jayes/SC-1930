@@ -349,7 +349,7 @@ Try again with density ridges
 
 ```{r}
 #| column: page
-#| fig-height: 10
+#| fig-height: 8
 
 df_plot %>%
   filter(!is.na(hisclass_group_abb)) %>%
@@ -559,6 +559,29 @@ reg_out %>%
   add_significance_stars() %>%
   add_n()
 ```
+
+
+```{r}
+reg_out <- feols(log_income ~ electricity_parish_born + hisclass_group_abb + schooling_abb + age + age_2 + female, data = df_reg)
+
+reg_out %>%
+  gtsummary::tbl_regression() %>%
+  add_significance_stars() %>%
+  add_n()
+```
+
+
+
+```{r}
+reg_out <- feols(log_income ~ electricity_parish_born + age + age_2 + female, data = df_reg)
+
+reg_out %>%
+  gtsummary::tbl_regression() %>%
+  add_significance_stars() %>%
+  add_n()
+```
+
+
 
 ### Try adding in parish fixed effects?
 

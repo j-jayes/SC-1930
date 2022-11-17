@@ -1,0 +1,555 @@
+---
+title: "Paper planning for paper 3 v2"
+format:
+    html:
+        code-fold: true
+        code-summary: "Show the code"
+        code-tools: true
+        theme: minty
+---
+
+## Purpose
+
+Paper planning.
+
+## Layout
+
+Initial regression - find the effect unconditional on any other variables.
+
+Use the different sets of data for treatment and control groups - write this up.
+
+- have to do the tests to get balance in the sample.
+
+Then introduce the 
+
+Age threshold is also important - the effect can only occur if you lived in an electricity parish at a particular time. Check more power to the people - but they are looking at a contemporary effect. 
+
+Question - what were the trends in migration from electricity parishes before and after electricity. If we care about the counterfactual, we have to look at where people move from electricity parishes.
+
+What is the theory?
+
+Building off of more power to the people, we think that electrification will result in benefits for workers at the bottom half of the income distribution - 
+
+Need to make some analyses of the outcome variable - what does income look like when you 
+
+
+```{r}
+library(tidyverse)
+theme_set(theme_light())
+
+df <- read_rds("data/augmented/df_1930_augmented.rds")
+
+df <- df %>% 
+  mutate(log_income = log(inkomst + 1),
+         log_wealth = log(formogh + 1))
+
+# code up schooling
+df <- df %>%
+  mutate(schooling = case_when(
+    skola == "" ~ NA_character_,
+    skola == "0" ~ "No school, no information about ability to read or write",
+    skola == "1" ~ "No school, able to read and write",
+    skola == "2" ~ "Can read but can’t write",
+    skola == "3" ~ "Primary school",
+    skola == "4" ~ "Additional course after primary school",
+    skola == "5" ~ "Secondary school without high school exam",
+    skola == "7|6" ~ "High school exam without exam from higher educational institution",
+    skola == "8" ~ "Exam from higher educational institution, but not from a university",
+    skola == "9" ~ "University",
+    skola == "x|X" ~ "No school, no information about ability to read or write",
+    skola == "y|Y" ~ "No school, able to read and write",
+    TRUE ~ NA_character_
+  )) %>%
+  mutate(schooling_abb = case_when(
+    schooling == "No school, no information about ability to read or write" ~ NA_character_,
+    schooling %in% c("Can read but can’t write", "No school, able to read and write") ~ "Literate",
+    schooling %in% c("Primary school") ~ "Primary school",
+    schooling %in% c("Secondary school without high school exam", "Additional course after primary school") ~ "Post primary schooling",
+    schooling %in% c("University", "Exam from higher educational institution, but not from a university") ~ "Post-secondary and university",
+    TRUE ~ NA_character_
+  ))
+
+# fixing hushållerska 
+df <- df %>%
+  mutate(hisclass_group_abb = as.character(hisclass_group_abb)) %>% 
+  mutate(hisclass_group_abb = case_when(
+    hisco_code %in% c(22490, 54020) ~ "Low-skilled workers",
+    TRUE ~ hisclass_group_abb
+  )) %>% 
+  mutate(hisclass_group_abb = factor(hisclass_group_abb))
+
+
+df_reg <- df 
+
+# df <- df %>% 
+#   filter(tce_group_250 %in% c("control", "treatment"),
+#          adult_1930 == "Adult")
+```
+
+
+```{r}
+library(ggridges)
+# df %>% 
+#   filter(!is.na(hisclass_group_abb),
+#          !is.na(inkomst)) %>% 
+#   mutate(log_income = log(inkomst + 1),
+#          hisclass_group_abb = fct_reorder(hisclass_group_abb, hisclass_code_abb)) %>% 
+#   ggplot(aes(x = log_income, y = hisclass_group_abb, fill = hisclass_group_abb)) +
+#   geom_density_ridges2(show.legend = F) +
+#   scale_x_continuous(limits = c(4, 12))
+```
+
+<!-- This is done again below - better I think. -->
+
+<!-- Different log income specifications -->
+
+<!-- 1. Log income with no adding zeros. -->
+
+<!-- 2. Log income with adding zeros. -->
+
+<!-- 3. Log income with imputed averages based on hisco. -->
+
+```{r}
+# df_missing_income <- df %>% 
+#   filter(is.na(inkomst)) %>% 
+#   group_by(hisco_code) %>% 
+#   summarise(n_missing = n())
+# 
+# df_non_missing_income <- df %>% 
+#   filter(!is.na(inkomst)) %>% 
+#   group_by(hisco_code) %>% 
+#   summarise(n_non_missing = n(),
+#             mean_income = mean(inkomst),
+#             median_income = median(inkomst),
+#             sd_income = sd(inkomst))
+# 
+# df_incomes <- df_missing_income %>% 
+#   full_join(df_non_missing_income)
+# 
+# df_incomes %>%
+#   ggplot(aes(mean_income, median_income)) +
+#   geom_point(colour = "midnightblue", alpha = .5) +
+#   geom_abline()
+# 
+# # df_incomes %>%
+# #   mutate(ratio_missing_to_non_missing = n_missing / n_non_missing) %>%
+# #   arrange(desc(ratio_missing_to_non_missing)) %>% 
+# #   slice_sample(n = 5)
+# 
+# df_incomes <- df_incomes %>% 
+#   select(hisco_code, inkomst_imputed = median_income)
+# 
+# df_reg <- df_reg %>% 
+#   inner_join(df_incomes, by = c("hisco_code")) %>% 
+#   mutate(inkomst_imputed = ifelse(is.na(inkomst), inkomst_imputed, inkomst))
+
+# df_reg
+```
+
+
+```{r}
+# 
+# df_reg %>%
+#   filter(tce_group_150 %in% c("control", "treatment")) %>%
+#   ggplot(aes(log_income, y = factor(electricity_parish_born), fill = factor(electricity_parish_born))) +
+#   geom_density_ridges2() +
+#   scale_x_continuous(limits = c(4, 12))
+```
+
+
+### Modelling outcomes that have lots of zeros
+
+Context: a problem in the income data is that there are people for whom an occupation is listed, but income is missing. 
+
+It could be that the income was not recorded in the construction of the 1930 census (income was not recorded in the parish books, where the majority of 1930 census data originated, but rather from the taxation ledger), or that the person's listed occupation was what they did during their working life.
+
+<blockquote>
+
+I asked how it was possible to know that in Stockholm, since it was not registered by the parish clerk. Björn and I checked that in the original document and the parish register. The answer is that for the year 1930 the income was added, and to do that they must have had access to the taxation ledger.
+
+- Anders Larsson.
+
+</blockquote> 
+
+The purpose of this section is to investigate the missingness of income information and then create a few possible solutions.
+
+#### What does the distribution of income data look like?
+
+Here we plot a histogram of income with a log scale on the x-axis.
+
+```{r}
+df %>%
+  filter(adult_1930 == "Adult") %>%
+  ggplot(aes(inkomst)) +
+  geom_histogram() +
+  scale_x_log10(labels = scales::dollar_format(suffix = "SEK"))
+```
+
+As a result we lose 833k observations that are missing income information.
+
+We can alternatively replace all the missing values with zero, and then take the log of one plus income, as shown below.
+
+```{r}
+df %>%
+  filter(adult_1930 == "Adult") %>%
+  replace_na(list(inkomst = 0)) %>%
+  mutate(is_zero = if_else(inkomst == 0, TRUE, FALSE)) %>% 
+  mutate(income = 1 + inkomst) %>%
+  ggplot(aes(income, fill = is_zero)) +
+  geom_histogram(binwidth = 0.25, 
+                 boundary = 0, color = "white") +
+  scale_x_log10(labels = scales::dollar_format(suffix = "SEK")) +
+  geom_vline(xintercept = 1) +
+  scale_fill_brewer(palette = "Paired") +
+  labs(x = "Income",
+       y = "Count",
+       fill = "Is zero?") +
+  theme(legend.position = "bottom")
+```
+
+#### Who is missing income information
+
+Amongst those who are adults in 1930, how many have missing income information?
+
+```{r}
+df %>%
+  filter(adult_1930 == "Adult") %>%
+  count(is.na(inkomst), name = "number") %>%
+  mutate(
+    pct_share = number / sum(number),
+    pct_share = scales::percent(pct_share, accuracy = 0.01)
+  ) %>%
+  gt() %>%
+  fmt_number(number, decimals = 0) %>%
+  tab_header(
+    title = md("How many records are **missing income information**"),
+    subtitle = "In 1930 census"
+  )
+```
+
+So 47.95% of all observations are missing income information.
+
+Amongst those who are missing income information, how many have an occupation listed, that can be classified as an occupation??
+
+```{r}
+pct_has_hisco <- df %>%
+  filter(adult_1930 == "Adult",
+         is.na(inkomst)) %>%
+  count(is.na(hisco_code), name = "number") %>% 
+    mutate(
+    pct_share = number / sum(number),
+    pct_share = scales::percent(pct_share, accuracy = 0.01)
+  ) %>% 
+  filter(`is.na(hisco_code)` == FALSE) %>% 
+  pull(pct_share)
+
+df %>%
+  filter(adult_1930 == "Adult",
+         is.na(inkomst)) %>%
+  count(is.na(hisco_code), name = "number") %>% 
+    mutate(
+    pct_share = number / sum(number),
+    pct_share = scales::percent(pct_share, accuracy = 0.01)
+  ) %>%
+  gt() %>%
+  fmt_number(number, decimals = 0) %>%
+  tab_header(
+    title = md("How many records are **missing income information and occupation**"),
+    subtitle = "In 1930 census"
+  )
+```
+
+So `r pct_has_hisco` of those records without income information do in fact have a hisco code, or clear occupation. We could impute income for these individuals.
+
+The most common ones are:
+
+```{r}
+HISCO_lookup <- readRDS("~/Recon/SC-1930/data/HISCO_lookup.rds")
+
+df %>%
+  filter(
+    adult_1930 == "Adult",
+    is.na(inkomst)
+  ) %>%
+  count(hisco_code, sort = T) %>%
+  inner_join(HISCO_lookup, by = c("hisco_code" = "HISCO_int")) %>%
+  select(HISCO_string, n) %>%
+  slice_head(n = 20) %>%
+  mutate(HISCO_string = fct_reorder(HISCO_string, n)) %>%
+  ggplot(aes(n, HISCO_string)) +
+  geom_col(fill = "midnightblue") +
+  scale_x_continuous(labels = scales::number_format()) +
+  labs(
+    x = "Number of records missing income information",
+    y = NULL
+  )
+```
+
+What about the records that are missing income information and a hisco. 
+
+Let's look at their age and the information in their occupation variable.
+
+First if we plot a histogram of their ages
+
+```{r}
+df %>%
+  filter(
+    adult_1930 == "Adult",
+    is.na(inkomst),
+    is.na(hisco_code)
+  ) %>%
+  ggplot(aes(age)) +
+  geom_histogram(binwidth = 1, fill = "midnightblue", alpha = .8) +
+  scale_x_continuous(limits = c(15, 100))
+```
+
+So some are quite young - this makes sense that they would not have an occupation.
+
+What are the most common things written in their occupational variable by age bracket?
+
+```{r}
+library(tidytext)
+
+df %>%
+  filter(
+    adult_1930 == "Adult",
+    is.na(inkomst),
+    is.na(hisco_code),
+    yrke.x != "",
+    age <= 100
+  ) %>% 
+  mutate(age_chunk = age - age %% 10) %>% 
+  group_by(age_chunk) %>% 
+  count(yrke.x) %>% 
+  slice_max(n, n = 10) %>% 
+  ungroup() %>% 
+  mutate(yrke.x = reorder_within(yrke.x, n, age_chunk)) %>% 
+  ggplot(aes(n, yrke.x, fill = factor(age_chunk))) +
+  geom_col(show.legend = F) + 
+  scale_y_reordered() +
+  facet_wrap(~ age_chunk, scales = "free_y")
+```
+
+So they really aren't missing income data - it doesn't apply to them.
+
+This is because they are sons and daughters at home, students, disabled or windowed, elderly.
+
+What about the people who have hisco codes?
+
+#### What about taking the mean and median income for people who do have an income by hisco code?
+
+We do that in the codeblock below and show the results in the graph, which plots the relationship between mean and median imputed income, where each point is one hisco code.
+
+```{r}
+df_no_income_hisco <- df %>%
+  filter(
+    adult_1930 == "Adult",
+    is.na(inkomst)
+  ) %>%
+  count(hisco_code, sort = T) %>%
+  inner_join(HISCO_lookup, by = c("hisco_code" = "HISCO_int")) %>%
+  select(HISCO_string, hisco_code, n_missing_income = n)
+
+df_income_hisco <- df %>%
+  filter(
+    adult_1930 == "Adult",
+    !is.na(inkomst)
+  ) %>%
+  group_by(hisco_code) %>%
+  summarise(
+    number_with_income = n(),
+    mean_income = mean(inkomst),
+    median_income = median(inkomst)
+  ) %>% 
+  ungroup()
+
+
+df_income_hisco <- df_income_hisco %>% 
+  inner_join(df_no_income_hisco)
+
+df_income_hisco <- df_income_hisco %>% 
+  select(hisco_code, income_imputed_median = median_income,
+         income_imputed_mean = mean_income)
+
+df <- df %>% 
+  left_join(df_income_hisco, by = c("hisco_code"))
+
+
+```
+
+
+```{r}
+df_income_hisco %>%
+  ggplot(aes(income_imputed_mean, income_imputed_median)) +
+  geom_point() +
+  geom_abline() +
+  geom_smooth() +
+  labs(
+    x = "Income imputed mean",
+    y = "Income imputed median",
+    title = "Comparison of income imputation"
+  )
+```
+
+Takeaway: for incomes below 2,500 mean or median seem reasonable. For incomes above 2,500, mean is higher than the median. I keep both.
+
+#### Income imputation
+
+My set of rules is this:
+
+For a person to have an income imputed, they must have a hisco code.
+
+1. If they don't have a hisco code, they get excluded from the income regressions. (e.g. living at home with parents, students, elderly)
+
+1. If they have a hisco code, but no income information, I do four ways and use them all in a regression.
+
+a. They get a zero (called income_incl_zeros)
+
+b. They get imputed median income based on other hisco codes
+
+c. They get imputed mean income based on other hisco codes
+
+d. They get median income based on other hisco codes by county.
+
+I code these up in the block below.
+
+```{r}
+# a. They get a zero
+
+df <- df %>%
+  mutate(income_incl_zero = case_when(
+    is.na(hisco_code) ~ NA_real_,
+    !is.na(hisco_code) & is.na(inkomst) ~ 0,
+    TRUE ~ as.numeric(inkomst)
+  ))
+
+# b. they get imputed median income based on other hisco codes
+
+df <- df %>%
+  mutate(income_imputed_median = case_when(
+    is.na(income_imputed_median) ~ NA_real_,
+    inkomst > 0 ~ as.numeric(inkomst),
+    TRUE ~ as.numeric(income_imputed_median)
+  ))
+
+
+# c. They get imputed mean income based on other hisco codes
+
+df <- df %>%
+  mutate(income_imputed_mean = case_when(
+    is.na(income_imputed_mean) ~ NA_real_,
+    inkomst > 0 ~ as.numeric(inkomst),
+    TRUE ~ as.numeric(income_imputed_mean)
+  ))
+```
+
+Let's check that these worked
+
+```{r}
+df %>% 
+  mutate(is_zero = income_incl_zero == 0) %>%
+  ggplot(aes(income_incl_zero + 1, fill = is_zero)) +
+  geom_histogram() +
+  scale_x_log10() +
+  scale_color_brewer(palette = "Paired") +
+  labs(title = "Added zeros")
+
+
+df %>%
+  mutate(is_zero = income_imputed_median == 0) %>%
+  ggplot(aes(income_imputed_median + 1, fill = is_zero)) +
+  geom_histogram(binwidth = 0.1) +
+  scale_x_log10() +
+  scale_color_brewer(palette = "Paired") +
+  labs(title = "Imputed median")
+
+df %>%
+  mutate(is_zero = income_imputed_mean == 0) %>%
+  ggplot(aes(income_imputed_mean + 1, fill = is_zero)) +
+  geom_histogram(binwidth = 0.1) +
+  scale_x_log10() +
+  scale_color_brewer(palette = "Paired") +
+  labs(title = "Imputed mean")
+
+```
+
+29,000 ish observations had a recorded income of zero. I imputed these rather for median and mean imputation variables because I think it makes more sense. I think they should have been NAs in the original dataset.
+
+We can come back to a hurdle model, like the one explained [here](https://www.andrewheiss.com/blog/2022/05/09/hurdle-lognormal-gaussian-brms/#2-regular-ols-model-on-a-logged-outcome).
+
+## Regressions
+
+First regression is going to look at how living in an electricity parish minimises the cost to staying in your parish of birth.
+
+Theory is thus: we know that living in your parish of birth decreases your income. This is because movers generally have higher incomes than stayers - at least three effects: 1. better matching between skills and jobs, 2. you can move to places with higher wages, 3. Selection effects say that those with highest return to migration will move.
+
+What do I want to have? A regression summary table with the interactionb between living in an electricity parish with living in your parish of birth as the coefficient of interest.
+
+Then I want to introduce a bunch of diffrent variables one at a time.
+
+Then I want to try different specifications of the income variable.
+
+Then I want to change the control groups.
+
+
+```{r}
+library(gt)
+library(fixest)
+library(modelsummary)
+# library(tidyverse)
+# theme_set(theme_light())
+
+# df_reg <- df
+# df_reg %>% write_rds(here::here("data", "clean_data", "df_ref.rds"))
+
+df_reg <- read_rds(here::here("data", "clean_data", "df_ref.rds"))
+
+df_reg <- df_reg %>% 
+  mutate(hisclass_group_abb = fct_relevel(hisclass_group_abb, "Farmers and fishermen"),
+         age_2 = age^2) %>% 
+  mutate(across(.cols = c(income_incl_zero, income_imputed_mean, income_imputed_median), log))
+
+df_reg_250 <- df_reg %>%
+  filter(
+    tce_group_250 %in% c("control", "treatment"),
+    adult_1930 == "Adult"
+  )
+
+df_reg_150 <- df_reg %>%
+  filter(
+    tce_group_150 %in% c("control", "treatment"),
+    adult_1930 == "Adult"
+  )
+
+df_reg_100 <- df_reg %>%
+  filter(
+    tce_group_150 %in% c("control", "treatment"),
+    adult_1930 == "Adult"
+  )
+
+
+res_multi <- feols(log_income ~ electricity_parish_born*lives_in_parish_of_birth + age + age_2 + female + csw0(hisclass_group_abb, schooling_abb, dist_bp_to_cp_km), df_reg_250)
+
+modelsummary(res_multi, output = "gt")
+
+  
+```
+
+
+How to format regression table results.
+
+I think like everyone before, I need to create a new standatd.
+
+Format for output:
+
+Nice table, mostly just coefficients of interest.
+
+Must be able to order coefficients.
+
+Potentially make the table in gt - see if there are some useful formatting options.
+
+```{r}
+library(modelsummary)
+modelsummary(res_multi)
+```
+

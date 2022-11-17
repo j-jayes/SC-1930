@@ -1,0 +1,106 @@
+---
+title: "1930 census 's.e. investigation'"
+format: pdf
+execute: 
+  echo: false
+  message: false
+  warning: false
+---
+
+## Purpose
+
+Investigate the prevalence of s.e. in the 1930 census occupational titles
+
+## Context
+
+According to Anders and Björn "apparently, it should be short for “sin egen” that means that you are not employed, but instead run your own business."
+
+## How common is it?
+
+```{r}
+library(tidyverse)
+library(gt)
+theme_set(theme_light())
+
+# df <- read_rds(here::here("data/augmented/df_1930_augmented.rds"))
+df <- read_rds(here::here("data/temp/se_investigation.rds"))
+
+```
+
+How many different ways is it written?
+
+```{r}
+tibble(type = c("se", "se.", "s.e."),
+       n = c(57, 233,  7293),
+       pattern = c(" se$| se ", " se\\.", "s\\.e\\.")) %>% 
+  select(!pattern) %>% 
+  gt() %>% 
+  fmt_number(n, decimals = 0, sep_mark = " ") %>% 
+  tab_header(title = md("**How common is 's.e.' in occupational titles**"),
+             subtitle = "In the swedish 1930 census") %>% 
+  cols_label(type = "Written",
+             n = "Number of records")
+```
+
+What are the most common titles for which it occurs?
+
+```{r}
+df %>%
+  select(yrke.x, yrke.y, scbkod) %>%
+  count(yrke.y, sort = T) %>%
+  filter(!is.na(yrke.y)) %>%
+  mutate(yrke.y = fct_reorder(yrke.y, n)) %>%
+  slice_head(n = 20) %>%
+  ggplot(aes(n, yrke.y, fill = n)) +
+  geom_col(show.legend = F) +
+  scale_fill_viridis_c() +
+  labs(x = "Number of observations", 
+       y = "Title")
+
+```
+
+### Where is it common?
+
+```{r}
+library(sf)
+st_map <- readRDS(here::here("Electricity-control-groups/st_map.rds"))
+
+se_places <- df %>%
+  filter(str_detect(yrke.x, " se\\.| s\\.e\\.| se$| se ")) %>%
+  select(yrke.x, yrke.y, scbkod) %>% 
+  count(scbkod)
+
+df_map_counts <- st_map %>% 
+  mutate(scbkod = str_remove(ref_code.x, "SE/"),
+         scbkod = str_remove(scbkod, "\\d\\d\\d$"),
+         scbkod = as.numeric(scbkod)) %>% 
+  inner_join(se_places, by = c("scbkod"))
+```
+
+
+```{r}
+ggplot() +
+  geom_sf(data = st_map, fill = "grey80", colour = "#FFFFFF") +
+  geom_sf(aes(fill = n), data = df_map_counts) +
+  scale_fill_viridis_c() +
+  labs(fill = "Number of records with s.e.")
+```
+
+It doesn't seem like it any specific geographical pattern that differs from population.
+
+```{r}
+df_map_counts %>%
+  as_tibble() %>%
+  select(name, n) %>%
+  arrange(desc(n)) %>%
+  slice_head(n = 20) %>%
+  mutate(name = fct_reorder(name, n)) %>%
+  ggplot(aes(n, name, fill = n)) +
+  geom_col(show.legend = F) +
+  labs(
+    n = "Number of records with s.e.",
+    y = "Parish"
+  )
+```
+
+
