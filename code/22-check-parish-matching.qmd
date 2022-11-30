@@ -1,0 +1,172 @@
+---
+title: "Parish-matching"
+format: html
+---
+
+## Purpose
+
+Double check the matching of provinces over time.
+
+I have the maps from Junka as the middle ground.
+
+Then I must match the 1930 census to the 1930 map.
+
+Then I must match the 1900 census names (from MPTTP) to the 1900 map.
+
+```{r}
+library(tidyverse)
+library(haven)
+
+parishes_1900 <- read_dta(here::here("replication", "data", "data Table 2.dta"))
+```
+
+### Maps in 1900 and 1930.
+
+We want to do a balance test such that the parishes 
+
+```{r}
+# devtools::install_github("junkka/histmaps")
+library(histmaps)
+
+# data("geom_meta")
+
+# geom_meta %>% view()
+
+map_1900 <- get_boundaries(1900, "parish")
+
+map_1930 <- get_boundaries(1930, "parish")
+
+map_1900 %>%
+  as_tibble() %>%
+  anti_join(map_1930, by = c("ref_code")) %>%
+  view()
+```
+
+So we get some additional parishes in 1930.
+
+Where are they?
+
+```{r}
+map_1930 %>%
+  as_tibble() %>%
+  anti_join(map_1900, by = c("ref_code")) %>%
+  ggplot(aes(geometry = geometry)) +
+  geom_sf()
+```
+
+### 1930 census
+
+```{r}
+set.seed(123)
+df_1930 <- df %>% select(lannr, forsnr, arkbild, ref_code_short = scbkod) %>%
+  distinct()
+```
+
+How many of 1930 parishes are in the 1900 control variables set?
+
+To check this we can match by code and then check levenshtein distance between the strings.
+
+The codes in 1930 are only 5 or 6 digits long. So we miss the last three digits compared with the 9 digit codes from SCB today.
+
+It seems that in the case that there are multiple parishes with the same code in the 1930 census that they are distinct parishes by name, and have different 9 digit codes.
+
+For example, in the 1930 census there are 3 parishes with scbkod = 158201. 
+
+In this case, they are 
+
+```{r}
+# df_1930 %>% 
+#   count(ref_code_short, sort = T)
+
+df_1930 %>% 
+  filter(ref_code_short == 158201)
+```
+
+Here we can check if these separate parishes occur in 1900 controls
+
+```{r}
+parishes_1900 %>% 
+  filter(str_detect(parish_code, "158201")) %>% view()
+```
+
+So what I really need to do is map from the parish codes in 1930 census by string and code to the 9 digit codes.
+
+Let's take a first pass with codes alone and then check for the multiples
+
+#### Multiples
+
+To uniquely identify a parish in the 1930 census we need the 5 or 6 digit code and the string I think.
+
+The issue is that the scb codes are sometimes just wrong...
+
+In the 1930 census, Arnö parish has code 38100, in Södermanlands county. In the junka map it is 038112002. In the MPTTP replicaton data it is 38112002.
+
+```{r}
+df_1930 %>%
+  add_count(ref_code_short, name = "count_of_parish_code") %>%
+  filter(count_of_parish_code > 1) %>%
+  arrange(ref_code_short)
+
+map_1930 %>% 
+  filter(str_detect(name, "Arnö")) %>% 
+  select(ref_code)
+
+parishes_1900 %>% 
+  mutate(parish_name_title = str_to_title(parish_name)) %>% 
+  filter(str_detect(parish_name_title, "Arnö")) %>% 
+  select(parish_code)
+```
+
+Maybe it's better to match on string and county code?
+
+What should we do with them? 
+
+Well, if we have 
+
+### Repeated geom_ids
+
+```{r}
+map_1930 %>% 
+  as_tibble() %>% 
+  count(name, sort = T)
+
+map_1930 %>%
+  filter(str_detect(name, "Lindesbergs landsförsamling")) %>%
+  ggplot(aes(fill = factor(geom_id))) +
+  geom_sf(alpha = .5) +
+  facet_wrap(~geom_id)
+
+map_1930 %>% 
+  filter(str_detect(name, "Alingsås landsförsamling")) %>% 
+  ggplot(aes(fill = factor(geom_id))) +
+  geom_sf(alpha = .5)
+
+```
+
+
+### More power to the people eectricity parishes
+
+Let's see if we can get the 192 parishes and plot them on a map
+
+```{r}
+el_parishes <- parishes_1900 %>% 
+  filter(ever_iline == 1)
+
+library(sf)
+
+map_1900 <- map_1900 %>% 
+  mutate(parish_code = as.numeric(str_remove(ref_code, "SE/")))
+
+map_1900 %>% 
+  inner_join(parishes_1900) %>% 
+  ggplot(aes(fill = ever_iline)) +
+  geom_sf(colour = "white")
+
+```
+
+There are 3 parishes in the North that should not be included. I doubt that these make a difference, though.
+
+```{r}
+
+```
+

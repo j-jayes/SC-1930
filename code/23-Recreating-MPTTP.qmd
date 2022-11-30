@@ -1,0 +1,127 @@
+---
+title: "23-Recreating-MPTTP"
+format: html
+---
+
+## Purpose
+
+Recreate the results of More Power to the People.
+
+### Data
+
+They create a panel - 3 time periods. Compare parishes over time because their variation is at the parish level.
+
+3 sources of data. 
+
+1. Geocoded strike data. Measured at the parish level.
+
+2. Occupational structure of each parish from IPUMS international.
+
+3. Access to the grid from digitized maps.
+
+### Panel dataset on 2,470 parishs at unchanging level.
+
+Main outcome variable: strikes. 
+
+Mechanisms from electricity to strikes - strutural change
+
+### Definition of Western Line
+
+"Due to the exogenous nature of the location of power plants and the explicit intention to connect Olidan to älvkarleby via a state-sponsored mainline system, the Western Lin, we consider parishes connected to the first mainline system, the Western Line, and within a 60-km buffer along a straing line between the two power plants as our main treatment variable. 
+
+The sample from the Western Line consists of 192 parishes and is depicted with thick lines in figure 1.
+
+### Tabstat
+
+```{r}
+library(tidyverse)
+library(haven)
+
+parishes_1900 <- read_dta(here::here("replication", "data", "data Table 2.dta"))
+
+parishes_1900 %>% view()
+```
+
+Stata:
+* create table with the mean and standard deviation of each variable by later access to the grid
+tabstat labforce shc1 shc2 shc3 shc4 shc5 shc6 shc7 strikes strikesoff strikesdef, by(ever_iline) format(%5.0g) stat(mean sd)
+
+* test for difference-in-means 
+foreach var of varlist labforce shc1 shc2 shc3 shc4 shc5 shc6 shc7 strikes strikesoff strikesdef {
+ttest `var', by(ever_iline) 
+}
+
+```{r}
+# Table 2
+library(broom)
+library(gt)
+
+parishes_1900_means <- parishes_1900 %>%
+  group_by(ever_iline) %>%
+  summarise(across(labforce:shc7, .fns = list(
+    mean = ~ mean(.x, na.rm = T),
+    sd = ~ sd(.x, na.rm = T)
+  ))) %>%
+  pivot_longer(-ever_iline) %>%
+  separate(name, into = c("variable", "stat"), sep = "_") %>%
+  pivot_wider(names_from = ever_iline, values_from = value)
+
+
+parishes_1900_ttest <- parishes_1900 %>%
+  pivot_longer(labforce:shc7, names_to = "variable", values_to = "value") %>%
+  group_by(ever_iline, variable) %>%
+  nest() %>%
+  spread(key = ever_iline, value = data) %>%
+  mutate(
+    t_test = map2(`0`, `1`, ~ {
+      t.test(.x$value, .y$value) %>% tidy()
+    }),
+    `0` = map(`0`, nrow),
+    `1` = map(`1`, nrow)
+  ) %>%
+  unnest(cols = everything()) %>%
+  ungroup()
+
+parishes_1900_ttest <- parishes_1900_ttest %>%
+  select(variable, estimate, p.value) %>%
+  mutate(estimate = -estimate) %>%
+  pivot_longer(-variable)
+
+parishes_1900_means %>%
+  select(-stat) %>%
+  bind_cols(parishes_1900_ttest %>% select(-name, -variable)) %>%
+  gt()
+
+
+```
+
+
+## Now checking for comparisons with treatment group
+
+```{r}
+groups_1930 <- df %>% select(arkbild, scbkod, contains("tce_group")) %>% distinct()
+
+
+parishes_1900 <- parishes_1900 %>%
+  mutate(
+    parish_code_short = as.character(parish_code),
+    parish_code_short = str_remove(parish_code_short, "[0-9][0-9][0-9]$"),
+    parish_code_short = as.numeric(parish_code_short)
+  )
+
+groups_1930 <- groups_1930 %>% 
+  inner_join(parishes_1900, by = c("scbkod" = "parish_code_short"))
+```
+
+
+```{r}
+library(gtsummary)
+
+groups_1930 %>%
+  select(ever_iline, labforce:shc7) %>%
+  drop_na() %>%
+  tbl_summary(by = ever_iline, statistic = list(all_continuous() ~ "{mean} ({sd})", all_categorical() ~ "{n} ({p}%)")) %>%
+  add_difference() %>%
+  add_significance_stars()
+```
+

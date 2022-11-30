@@ -6,6 +6,11 @@ format:
         code-summary: "Show the code"
         code-tools: true
         theme: minty
+        
+execute: 
+  echo: true
+  warning: false
+  message: false
 ---
 
 ## Purpose
@@ -37,7 +42,7 @@ Need to make some analyses of the outcome variable - what does income look like 
 library(tidyverse)
 theme_set(theme_light())
 
-df <- read_rds("data/augmented/df_1930_augmented.rds")
+df <- read_rds(here::here("data/augmented/df_1930_augmented.rds"))
 
 df <- df %>% 
   mutate(log_income = log(inkomst + 1),
@@ -264,7 +269,7 @@ So `r pct_has_hisco` of those records without income information do in fact have
 The most common ones are:
 
 ```{r}
-HISCO_lookup <- readRDS("~/Recon/SC-1930/data/HISCO_lookup.rds")
+HISCO_lookup <- readRDS(here::here("data/HISCO_lookup.rds"))
 
 df %>%
   filter(
@@ -450,7 +455,7 @@ df %>%
   mutate(is_zero = income_incl_zero == 0) %>%
   ggplot(aes(income_incl_zero + 1, fill = is_zero)) +
   geom_histogram() +
-  scale_x_log10() +
+  scale_x_log10(labels = scales::dollar_format(prefix = "SEK ")) +
   scale_color_brewer(palette = "Paired") +
   labs(title = "Added zeros")
 
@@ -459,7 +464,7 @@ df %>%
   mutate(is_zero = income_imputed_median == 0) %>%
   ggplot(aes(income_imputed_median + 1, fill = is_zero)) +
   geom_histogram(binwidth = 0.1) +
-  scale_x_log10() +
+  scale_x_log10(labels = scales::dollar_format(prefix = "SEK ")) +
   scale_color_brewer(palette = "Paired") +
   labs(title = "Imputed median")
 
@@ -467,7 +472,7 @@ df %>%
   mutate(is_zero = income_imputed_mean == 0) %>%
   ggplot(aes(income_imputed_mean + 1, fill = is_zero)) +
   geom_histogram(binwidth = 0.1) +
-  scale_x_log10() +
+  scale_x_log10(labels = scales::dollar_format(prefix = "SEK ")) +
   scale_color_brewer(palette = "Paired") +
   labs(title = "Imputed mean")
 
@@ -494,10 +499,11 @@ Then I want to change the control groups.
 
 ```{r}
 library(gt)
+library(gtsummary)
 library(fixest)
 library(modelsummary)
-# library(tidyverse)
-# theme_set(theme_light())
+library(tidyverse)
+theme_set(theme_light())
 
 # df_reg <- df
 # df_reg %>% write_rds(here::here("data", "clean_data", "df_ref.rds"))
@@ -507,7 +513,7 @@ df_reg <- read_rds(here::here("data", "clean_data", "df_ref.rds"))
 df_reg <- df_reg %>% 
   mutate(hisclass_group_abb = fct_relevel(hisclass_group_abb, "Farmers and fishermen"),
          age_2 = age^2) %>% 
-  mutate(across(.cols = c(income_incl_zero, income_imputed_mean, income_imputed_median), log))
+  mutate(across(.cols = c(income_incl_zero, income_imputed_mean, income_imputed_median), log, .names = "log_{.col}"))
 
 df_reg_250 <- df_reg %>%
   filter(
@@ -523,33 +529,327 @@ df_reg_150 <- df_reg %>%
 
 df_reg_100 <- df_reg %>%
   filter(
-    tce_group_150 %in% c("control", "treatment"),
+    tce_group_100 %in% c("control", "treatment"),
     adult_1930 == "Adult"
   )
 
 
-res_multi <- feols(log_income ~ electricity_parish_born*lives_in_parish_of_birth + age + age_2 + female + csw0(hisclass_group_abb, schooling_abb, dist_bp_to_cp_km), df_reg_250)
+res_multi_250_inc_1 <- feols(log_income_incl_zero ~ electricity_parish_born*lives_in_parish_of_birth + age + age_2 + female + csw0(hisclass_group_abb, schooling_abb, dist_bp_to_cp_km), df_reg_250)
 
-modelsummary(res_multi, output = "gt")
+res_multi_250_inc_2 <- feols(log_income_imputed_mean ~ electricity_parish_born * lives_in_parish_of_birth + age + age_2 + female + csw0(hisclass_group_abb, schooling_abb, dist_bp_to_cp_km), df_reg_250)
 
-  
+res_multi_250_inc_3 <- feols(log_income_imputed_median ~ electricity_parish_born * lives_in_parish_of_birth + age + age_2 + female + csw0(hisclass_group_abb, schooling_abb, dist_bp_to_cp_km), df_reg_250)
+
+# 150
+
+res_multi_150_inc_1 <- feols(log_income_incl_zero ~ electricity_parish_born*lives_in_parish_of_birth + age + age_2 + female + csw0(hisclass_group_abb, schooling_abb, dist_bp_to_cp_km), df_reg_150)
+
+res_multi_150_inc_2 <- feols(log_income_imputed_mean ~ electricity_parish_born * lives_in_parish_of_birth + age + age_2 + female + csw0(hisclass_group_abb, schooling_abb, dist_bp_to_cp_km), df_reg_150)
+
+res_multi_150_inc_3 <- feols(log_income_imputed_median ~ electricity_parish_born * lives_in_parish_of_birth + age + age_2 + female + csw0(hisclass_group_abb, schooling_abb, dist_bp_to_cp_km), df_reg_150)
+
+# 100
+
+res_multi_100_inc_1 <- feols(log_income_incl_zero ~ electricity_parish_born*lives_in_parish_of_birth + age + age_2 + female + csw0(hisclass_group_abb, schooling_abb, dist_bp_to_cp_km), df_reg_100)
+
+res_multi_100_inc_2 <- feols(log_income_imputed_mean ~ electricity_parish_born * lives_in_parish_of_birth + age + age_2 + female + csw0(hisclass_group_abb, schooling_abb, dist_bp_to_cp_km), df_reg_100)
+
+res_multi_100_inc_3 <- feols(log_income_imputed_median ~ electricity_parish_born * lives_in_parish_of_birth + age + age_2 + female + csw0(hisclass_group_abb, schooling_abb, dist_bp_to_cp_km), df_reg_100)
 ```
 
-
-How to format regression table results.
-
-I think like everyone before, I need to create a new standatd.
-
-Format for output:
-
-Nice table, mostly just coefficients of interest.
-
-Must be able to order coefficients.
-
-Potentially make the table in gt - see if there are some useful formatting options.
 
 ```{r}
-library(modelsummary)
-modelsummary(res_multi)
+cm <- c(
+  "electricity_parish_born:lives_in_parish_of_birth" = "Born electricity parish and lives in parish of birth",
+  "electricity_parish_born" = "Born electricity parish",
+  "lives_in_parish_of_birth" = "Lives in parish of birth"
+)
+
+rows <- tribble(
+  ~term,
+  ~`rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + electricity_parish_born:lives_in_parish_of_birth`,
+  ~`rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + electricity_parish_born:lives_in_parish_of_birth`,
+  ~`rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + electricity_parish_born:lives_in_parish_of_birth`,
+  ~`rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km + electricity_parish_born:lives_in_parish_of_birth`,
+  "Age, Age^2, Gender", "X", "X", "X", "X",
+  "Hisclass", "", "X", "X", "X",
+  "Schooling", "", "", "X", "X",
+  "Distance from birth parish to current parish", "", "", "", "X"
+  
+)
+
+attr(rows, 'position') <- c(7, 8, 9, 10)
+
+# tab <- modelsummary(res_multi_250_inc_1, 
+#                     stars = TRUE, 
+#                     coef_map = cm,
+#                     add_rows = rows,
+#                     output = "gt")
+
+# tab %>%
+#   cols_label(
+#     `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + electricity_parish_born:lives_in_parish_of_birth` = "OLS 1",
+#     `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 2",
+#     `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 3",
+#     `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km + electricity_parish_born:lives_in_parish_of_birth` = "OLS 4"
+#   ) %>%
+#   tab_spanner(
+#     label = md("Outcome var: **log income (incl zero)**"),
+#     columns = -1
+#   ) %>%
+#   tab_header(
+#     title = md("**Regression results**"),
+#     subtitle = "Control group within 250km of Western Line"
+#   )
 ```
 
+### 250 km radius
+
+```{r, eval=FALSE}
+
+tab_res_multi_250_inc_1 <- modelsummary(res_multi_250_inc_1,
+                    stars = TRUE,
+                    coef_map = cm,
+                    add_rows = rows,
+                    output = "gt")
+
+tab_res_multi_250_inc_1 %>%
+  cols_label(
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + electricity_parish_born:lives_in_parish_of_birth` = "OLS 1",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 2",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 3",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km + electricity_parish_born:lives_in_parish_of_birth` = "OLS 4"
+  ) %>%
+  tab_spanner(
+    label = md("Outcome var: **log income (incl zero)**"),
+    columns = -1
+  ) %>%
+  tab_header(
+    title = md("**Regression results**"),
+    subtitle = "Control group within 250km of Western Line"
+  ) %>% 
+  gtsave(filename = "tables/tab_res_multi_250_inc_1.png")
+```
+
+![](tables/tab_res_multi_250_inc_1.png)
+
+```{r, eval=FALSE}
+tab_res_multi_250_inc_2 <- modelsummary(res_multi_250_inc_2, 
+                    stars = TRUE, 
+                    coef_map = cm,
+                    add_rows = rows,
+                    output = "gt")
+
+tab_res_multi_250_inc_2 %>%
+  cols_label(
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + electricity_parish_born:lives_in_parish_of_birth` = "OLS 1",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 2",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 3",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km + electricity_parish_born:lives_in_parish_of_birth` = "OLS 4"
+  ) %>%
+  tab_spanner(
+    label = md("Outcome var: **log income (imputed with mean by hisco)**"),
+    columns = -1
+  ) %>%
+  tab_header(
+    title = md("**Regression results**"),
+    subtitle = "Control group within 250km of Western Line"
+  ) %>% 
+  gtsave(filename = "tables/tab_res_multi_250_inc_2.png")
+```
+
+![](tables/tab_res_multi_250_inc_2.png)
+
+```{r, eval=FALSE}
+tab_res_multi_250_inc_3 <- modelsummary(res_multi_250_inc_3, 
+                    stars = TRUE, 
+                    coef_map = cm,
+                    add_rows = rows,
+                    output = "gt")
+
+tab_res_multi_250_inc_3 %>%
+  cols_label(
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + electricity_parish_born:lives_in_parish_of_birth` = "OLS 1",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 2",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 3",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km + electricity_parish_born:lives_in_parish_of_birth` = "OLS 4"
+  ) %>%
+  tab_spanner(
+    label = md("Outcome var: **log income (imputed with median by hisco)**"),
+    columns = -1
+  ) %>%
+  tab_header(
+    title = md("**Regression results**"),
+    subtitle = "Control group within 250km of Western Line"
+  ) %>% 
+  gtsave(filename = "tables/tab_res_multi_250_inc_3.png")
+```
+
+![](tables/tab_res_multi_250_inc_3.png)
+
+### 150 km
+
+```{r, eval=FALSE}
+tab_res_multi_150_inc_1 <- modelsummary(res_multi_150_inc_1,
+                    stars = TRUE,
+                    coef_map = cm,
+                    add_rows = rows,
+                    output = "gt")
+
+tab_res_multi_150_inc_1 %>%
+  cols_label(
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + electricity_parish_born:lives_in_parish_of_birth` = "OLS 1",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 2",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 3",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km + electricity_parish_born:lives_in_parish_of_birth` = "OLS 4"
+  ) %>%
+  tab_spanner(
+    label = md("Outcome var: **log income (incl zero)**"),
+    columns = -1
+  ) %>%
+  tab_header(
+    title = md("**Regression results**"),
+    subtitle = "Control group within 150km of Western Line"
+  ) %>% 
+  gtsave(filename = "tables/tab_res_multi_150_inc_1.png")
+```
+
+![](tables/tab_res_multi_150_inc_1.png)
+
+```{r, eval=FALSE}
+
+tab_res_multi_150_inc_2 <- modelsummary(res_multi_150_inc_2, 
+                    stars = TRUE, 
+                    coef_map = cm,
+                    add_rows = rows,
+                    output = "gt")
+
+tab_res_multi_150_inc_2 %>%
+  cols_label(
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + electricity_parish_born:lives_in_parish_of_birth` = "OLS 1",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 2",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 3",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km + electricity_parish_born:lives_in_parish_of_birth` = "OLS 4"
+  ) %>%
+  tab_spanner(
+    label = md("Outcome var: **log income (imputed with mean by hisco)**"),
+    columns = -1
+  ) %>%
+  tab_header(
+    title = md("**Regression results**"),
+    subtitle = "Control group within 150km of Western Line"
+  ) %>% 
+  gtsave(filename = "tables/tab_res_multi_150_inc_2.png")
+
+```
+
+
+```{r, eval=FALSE}
+tab_res_multi_150_inc_3 <- modelsummary(res_multi_150_inc_3, 
+                    stars = TRUE, 
+                    coef_map = cm,
+                    add_rows = rows,
+                    output = "gt")
+
+tab_res_multi_150_inc_3 %>%
+  cols_label(
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + electricity_parish_born:lives_in_parish_of_birth` = "OLS 1",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 2",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 3",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km + electricity_parish_born:lives_in_parish_of_birth` = "OLS 4"
+  ) %>%
+  tab_spanner(
+    label = md("Outcome var: **log income (imputed with median by hisco)**"),
+    columns = -1
+  ) %>%
+  tab_header(
+    title = md("**Regression results**"),
+    subtitle = "Control group within 150km of Western Line"
+  ) %>% 
+  gtsave(filename = "tables/tab_res_multi_150_inc_3.png")
+```
+
+![](tables/tab_res_multi_150_inc_3.png)
+
+### 100 km
+
+```{r, eval=FALSE}
+tab_res_multi_100_inc_1 <- modelsummary(res_multi_100_inc_1,
+                    stars = TRUE,
+                    coef_map = cm,
+                    add_rows = rows,
+                    output = "gt")
+
+tab_res_multi_100_inc_1 %>%
+  cols_label(
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + electricity_parish_born:lives_in_parish_of_birth` = "OLS 1",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 2",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 3",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km + electricity_parish_born:lives_in_parish_of_birth` = "OLS 4"
+  ) %>%
+  tab_spanner(
+    label = md("Outcome var: **log income (incl zero)**"),
+    columns = -1
+  ) %>%
+  tab_header(
+    title = md("**Regression results**"),
+    subtitle = "Control group within 100km of Western Line"
+  )  %>% 
+  gtsave(filename = "tables/tab_res_multi_100_inc_1.png")
+```
+
+![](tables/tab_res_multi_100_inc_1.png)
+
+```{r, eval=FALSE}
+tab_res_multi_100_inc_2 <- modelsummary(res_multi_100_inc_2, 
+                    stars = TRUE, 
+                    coef_map = cm,
+                    add_rows = rows,
+                    output = "gt")
+
+tab_res_multi_100_inc_2 %>%
+  cols_label(
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + electricity_parish_born:lives_in_parish_of_birth` = "OLS 1",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 2",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 3",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km + electricity_parish_born:lives_in_parish_of_birth` = "OLS 4"
+  ) %>%
+  tab_spanner(
+    label = md("Outcome var: **log income (imputed with mean by hisco)**"),
+    columns = -1
+  ) %>%
+  tab_header(
+    title = md("**Regression results**"),
+    subtitle = "Control group within 100km of Western Line"
+  ) %>% 
+  gtsave(filename = "tables/tab_res_multi_100_inc_2.png")
+```
+
+![](tables/tab_res_multi_100_inc_2.png)
+
+```{r, eval=FALSE}
+tab_res_multi_100_inc_3 <- modelsummary(res_multi_100_inc_3, 
+                    stars = TRUE, 
+                    coef_map = cm,
+                    add_rows = rows,
+                    output = "gt")
+
+tab_res_multi_100_inc_3 %>%
+  cols_label(
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + electricity_parish_born:lives_in_parish_of_birth` = "OLS 1",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 2",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 3",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km + electricity_parish_born:lives_in_parish_of_birth` = "OLS 4"
+  ) %>%
+  tab_spanner(
+    label = md("Outcome var: **log income (imputed with median by hisco)**"),
+    columns = -1
+  ) %>%
+  tab_header(
+    title = md("**Regression results**"),
+    subtitle = "Control group within 100km of Western Line"
+  ) %>% 
+  gtsave(filename = "tables/tab_res_multi_100_inc_3.png")
+```
+
+![](tables/tab_res_multi_100_inc_3.png)
