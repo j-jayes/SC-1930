@@ -1,0 +1,777 @@
+---
+title: "Inequality and Lorenz curves"
+format: html
+---
+
+## Purpose
+
+The question we asked at the beginning of the presentation to Makro mackan was "what effect does technological change have on the labour market"
+
+We need to answer that regarding inequality here.
+
+### Planning
+
+I want to draw some Lorenz curves and see if there was more inequality in the areas with higher incomes. 
+
+My hypothesis is that the increase in incomes spilled over to jobs not directly related to electricity.
+
+### Read in data
+
+```{r}
+library(tidyverse)
+df_reg <- read_rds(here::here("data", "clean_data", "df_ref.rds"))
+
+df_reg <- df_reg %>%
+  mutate(
+    hisclass_group_abb = fct_relevel(hisclass_group_abb, "Farmers and fishermen"),
+    age_2 = age^2) %>%
+    mutate(across(.cols = c(income_incl_zero, income_imputed_mean, income_imputed_median), log, .names = "log_{.col}"))
+
+df_reg_250 <- df_reg %>%
+  filter(
+    tce_group_250 %in% c("control", "treatment"),
+    adult_1930 == "Adult"
+  )
+
+df_reg_250 <- df_reg_250 %>%
+  mutate(schooling_abb = factor(schooling_abb, levels = c(NA, "Literate", "Primary school", "Post primary schooling", "Post-secondary and university")))
+
+df_reg_incl_parish <- df_reg_250 %>%
+  select(
+    # Outcomes
+    log_income_incl_zero,
+    log_income_imputed_mean,
+    log_income_imputed_median,
+    # variables of interest
+    electricity_parish_living_in,
+    electricity_parish_born,
+    lives_in_parish_of_birth,
+    # controls
+    age,
+    age_2,
+    female,
+    hisclass_group_abb,
+    schooling_abb,
+    dist_bp_to_cp_km,
+    scbkod
+    # dist_pp_to_cp_km
+  ) %>%
+  drop_na()
+
+df_reg_250 <- df_reg_250 %>%
+  select(
+    # Outcomes
+    log_income_incl_zero,
+    log_income_imputed_mean,
+    log_income_imputed_median,
+    # variables of interest
+    electricity_parish_living_in,
+    electricity_parish_born,
+    lives_in_parish_of_birth,
+    # controls
+    age,
+    age_2,
+    female,
+    hisclass_group_abb,
+    schooling_abb,
+    dist_bp_to_cp_km,
+    # dist_pp_to_cp_km
+  ) %>%
+  drop_na()
+```
+
+
+
+```{r}
+treated_incomes <- df_reg_250 %>%
+  mutate(treated = case_when(
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age >= 28 ~ "Treated",
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age < 28 ~ "Too young to be treated",
+    TRUE ~ "Control"
+  )) %>%
+  filter(treated %in% c("Treated")) %>%
+  mutate(log_income_incl_zero = case_when(
+    log_income_incl_zero == -Inf ~ 1,
+    TRUE ~ log_income_incl_zero
+  )) %>% 
+  filter(log_income_incl_zero > 1) %>% 
+  select(log_income_incl_zero) %>% 
+  arrange(log_income_incl_zero) 
+
+total_income <- treated_incomes %>% 
+  summarise(total_income = sum(log_income_incl_zero)) %>% 
+  pull()
+
+treated_incomes %>%
+  mutate(
+    rn = row_number(),
+    pctile = ntile(rn, 50)
+  ) %>%
+  group_by(pctile) %>%
+  summarise(sum_income = sum(log_income_incl_zero)) %>%
+  mutate(
+    cumsum_income = cumsum(sum_income),
+    share_of_total_income = cumsum_income / total_income,
+    pctile = pctile / 50
+  ) %>%
+  ggplot(aes(pctile, share_of_total_income)) +
+  geom_point() +
+  geom_line() +
+  geom_abline() +
+  coord_cartesian()
+
+
+```
+
+
+```{r}
+control_incomes <- df_reg_250 %>%
+  mutate(treated = case_when(
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age >= 28 ~ "Treated",
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age < 28 ~ "Too young to be treated",
+    TRUE ~ "Control"
+  )) %>%
+  filter(treated %in% c("Control")) %>%
+  mutate(log_income_incl_zero = case_when(
+    log_income_incl_zero == -Inf ~ 1,
+    TRUE ~ log_income_incl_zero
+  )) %>% 
+  filter(log_income_incl_zero > 1) %>% 
+  select(log_income_incl_zero) %>% 
+  arrange(log_income_incl_zero) 
+
+total_income <- control_incomes %>% 
+  summarise(total_income = sum(log_income_incl_zero)) %>% 
+  pull()
+
+control_incomes %>%
+  mutate(
+    rn = row_number(),
+    pctile = ntile(rn, 100)
+  ) %>%
+  group_by(pctile) %>%
+  summarise(sum_income = sum(log_income_incl_zero)) %>%
+  mutate(
+    cumsum_income = cumsum(sum_income),
+    share_of_total_income = cumsum_income / total_income,
+    pctile = pctile / 100
+  ) %>%
+  ggplot(aes(pctile, share_of_total_income)) +
+  geom_point() +
+  geom_line() +
+  geom_abline() +
+  coord_cartesian()
+```
+
+Combined treatment and control
+
+```{r}
+df_incomes <- df_reg_250 %>%
+  mutate(treated = case_when(
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age >= 28 ~ "Treated",
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age < 28 ~ "Too young to be treated",
+    TRUE ~ "Control"
+  )) %>%
+  filter(treated %in% c("Control", "Treated")) %>%
+  mutate(log_income_incl_zero = case_when(
+    log_income_incl_zero == -Inf ~ 1,
+    TRUE ~ log_income_incl_zero
+  )) %>% 
+  # filter(log_income_incl_zero > 1) %>% 
+  select(log_income_incl_zero, treated) %>% 
+  arrange(log_income_incl_zero) 
+
+df_incomes <- df_incomes %>% 
+  group_by(treated) %>% 
+  mutate(total_income = sum(log_income_incl_zero)) 
+
+df_incomes %>%
+  group_by(treated) %>% 
+  mutate(
+    rn = row_number(),
+    pctile = ntile(rn, 100)
+  ) %>%
+  ungroup() %>% 
+  group_by(treated, pctile) %>%
+  mutate(sum_income = sum(log_income_incl_zero)) %>%
+  ungroup() %>% 
+  distinct(treated, pctile, sum_income, total_income) %>% 
+  group_by(treated) %>% 
+  mutate(
+    cumsum_income = cumsum(sum_income),
+    share_of_total_income = cumsum_income / total_income,
+    pctile = pctile / 100
+  ) %>%
+  ungroup() %>% 
+  ggplot(aes(pctile, share_of_total_income, colour = treated)) +
+  geom_point() +
+  geom_line() +
+  geom_abline() +
+  coord_cartesian()
+```
+
+Combined treatment and control not logged
+
+```{r}
+df_incomes <- df_reg_250 %>%
+  mutate(treated = case_when(
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age >= 28 ~ "Treated",
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age < 28 ~ "Too young to be treated",
+    TRUE ~ "Control"
+  )) %>%
+  filter(treated %in% c("Control", "Treated")) %>%
+  mutate(log_income_incl_zero = case_when(
+    log_income_incl_zero == -Inf ~ 1,
+    TRUE ~ exp(log_income_incl_zero)
+  )) %>% 
+  filter(log_income_incl_zero > 1) %>%
+  select(log_income_incl_zero, treated) %>% 
+  arrange(log_income_incl_zero) 
+
+df_incomes <- df_incomes %>% 
+  group_by(treated) %>% 
+  mutate(total_income = sum(log_income_incl_zero))
+```
+
+
+```{r}
+library(ggtext)
+
+jpeg(filename = here::here("summary_figs", "lorenz_curve.jpeg"), width = 4, height = 4, units = "in", res = 1000)
+
+df_incomes %>%
+  group_by(treated) %>% 
+  mutate(
+    rn = row_number(),
+    pctile = ntile(rn, 100)
+  ) %>%
+  ungroup() %>% 
+  group_by(treated, pctile) %>%
+  mutate(sum_income = sum(log_income_incl_zero)) %>%
+  ungroup() %>% 
+  distinct(treated, pctile, sum_income, total_income) %>% 
+  group_by(treated) %>% 
+  mutate(
+    cumsum_income = cumsum(sum_income),
+    share_of_total_income = cumsum_income / total_income,
+    pctile = pctile / 100
+  ) %>%
+  ungroup() %>% 
+  ggplot(aes(pctile, share_of_total_income, colour = treated)) +
+  geom_point() +
+  geom_line() +
+  geom_abline(linetype = 2) +
+  coord_cartesian() +
+  scale_color_manual(values = c("#000080", "#9C6114")) +
+  scale_x_continuous(labels = scales::number_format(scale = 100)) +
+  scale_y_continuous(labels = scales::number_format(scale = 100)) +
+  labs(title = glue::glue("Lorenz curves for 
+                          <span style = 'color:#000080;'>treated</span> and 
+                          <span style = 'color:#9C6114;'>control</span> parishes"),
+       x = "Income percentile",
+       y = "Cumulative share of income") +
+  theme(plot.title = element_markdown(),
+        plot.title.position = "plot",
+        legend.position = "none")
+
+dev.off()
+```
+
+```{r}
+df_incomes %>%
+  group_by(treated) %>% 
+  mutate(
+    rn = row_number(),
+    pctile = ntile(rn, 100)
+  ) %>%
+  ungroup() %>% 
+  group_by(treated, pctile) %>%
+  mutate(sum_income = sum(log_income_incl_zero)) %>%
+  ungroup() %>% 
+  distinct(treated, pctile, sum_income, total_income) %>% 
+  group_by(treated) %>% 
+  mutate(
+    cumsum_income = cumsum(sum_income),
+    share_of_total_income = cumsum_income / total_income,
+    pctile = pctile / 100
+  ) %>%
+  ungroup()
+```
+
+
+```{r}
+library(DescTools)
+df_incomes_control <- df_incomes %>% 
+  ungroup() %>% 
+  filter(treated == "Control") %>% 
+  select(log_income_incl_zero) %>% 
+  pull()
+
+
+gini_control <- Gini(df_incomes_control)
+
+df_incomes_treated <- df_incomes %>% 
+  ungroup() %>% 
+  filter(treated == "Treated") %>% 
+  select(log_income_incl_zero) %>% 
+  pull()
+
+gini_treated <- Gini(df_incomes_treated)
+
+```
+
+
+```{r}
+df_incomes_incl_scbkod <- df_reg_incl_parish %>%
+  mutate(treated = case_when(
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age >= 28 ~ "Treated",
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age < 28 ~ "Too young to be treated",
+    TRUE ~ "Control"
+  )) %>%
+  filter(treated %in% c("Control", "Treated")) %>%
+  mutate(log_income_incl_zero = case_when(
+    log_income_incl_zero == -Inf ~ 1,
+    TRUE ~ exp(log_income_incl_zero)
+  )) %>% 
+  filter(log_income_incl_zero > 1) %>%
+  select(log_income_incl_zero, treated, scbkod) %>% 
+  arrange(log_income_incl_zero) 
+
+df_incomes_incl_scbkod
+
+get_incomes <- 
+
+```
+
+
+
+
+
+
+
+```{r}
+df_incomes %>%
+  group_by(treated) %>% 
+  mutate(
+    rn = row_number(),
+    pctile = ntile(rn, 10)
+  ) %>%
+  ungroup() %>% 
+  group_by(treated, pctile) %>%
+  mutate(sum_income = sum(log_income_incl_zero)) %>%
+  ungroup() %>% 
+  distinct(treated, pctile, sum_income, total_income) %>% 
+  group_by(treated) %>% 
+  mutate(
+    cumsum_income = cumsum(sum_income),
+    share_of_total_income = cumsum_income / total_income,
+    pctile = pctile / 10
+  ) %>%
+  ungroup() %>% 
+  ggplot(aes(pctile, share_of_total_income, fill = treated)) +
+  geom_col(position = "dodge") 
+  # geom_line() +
+  geom_abline(linetype = 2) +
+  coord_cartesian() +
+  scale_color_manual(values = c("#000080", "#9C6114")) +
+  scale_x_continuous(labels = scales::number_format(scale = 10)) +
+  scale_y_continuous(labels = scales::number_format(scale = 10)) +
+  labs(title = glue::glue("Lorenz curves for 
+                          <span style = 'color:#000080;'>treated</span> and 
+                          <span style = 'color:#9C6114;'>control</span> parishes"),
+       x = "Income percentile",
+       y = "Cumulative share of income") +
+  theme(plot.title = element_markdown(),
+        plot.title.position = "plot",
+        legend.position = "none")
+```
+
+
+Decile share: each deciles share of total income.
+
+```{r}
+decile_shares <- df_incomes %>%
+  group_by(treated) %>% 
+  mutate(
+    rn = row_number(),
+    pctile = ntile(rn, 5)
+  ) %>%
+  ungroup() %>% 
+  group_by(treated, pctile) %>%
+  mutate(sum_income = sum(log_income_incl_zero)) %>%
+  ungroup() %>% 
+  distinct(treated, pctile, sum_income, total_income) %>% 
+  group_by(treated) %>% 
+  mutate(
+    cumsum_income = cumsum(sum_income),
+    share_of_total_income = cumsum_income / total_income,
+    decile_share = sum_income / total_income,
+    pctile = pctile / 5
+  ) %>% 
+  ungroup()
+```
+
+
+## Showtext
+
+```{r}
+library(showtext)
+## Loading Google fonts (https://fonts.google.com/)
+font_add_google("IBM Plex Mono", "ibm")
+font_add_google("Roboto", "roboto")
+
+showtext_opts(dpi = 300)
+showtext_auto(enable = TRUE)
+
+```
+
+
+```{r}
+decile_shares %>% 
+  ggplot(aes(pctile, decile_share, fill = treated)) +
+  geom_col(position = "dodge")
+
+# jpeg(filename = here::here("summary_figs", "quintile_share_dot_plot.jpeg"), width = 515, height = 290, units = "mm", dpi = 300)
+
+g <- decile_shares %>%
+  mutate(
+    pctile = pctile / 2,
+    decile_share_lab_control = case_when(
+      treated == "Control" ~ scales::percent(decile_share, accuracy = 1),
+      TRUE ~ NA_character_
+    ),
+    decile_share_lab_treated = case_when(
+      treated == "Treated" ~ scales::percent(decile_share, accuracy = 1),
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  ggplot(aes(y = pctile, x = decile_share, colour = treated)) +
+  geom_point(cex = 8) +
+  geom_text(aes(label = decile_share_lab_control), hjust = 1.3, size = 6) +
+  geom_text(aes(label = decile_share_lab_treated), hjust = -.5, size = 6) +
+  labs(
+    x = "Share of total income",
+    y = "Quintile of income distribution",
+    title = "Income quintile shares for 
+                          <b><span style = 'color:#9C6114;'>treated</span></b> and 
+                          <b><span style = 'color:#000080;'>control</span></b> individuals"
+  ) +
+  scale_y_continuous(labels = scales::number_format(scale = 10, accuracy = 1)) +
+  scale_x_continuous(labels = scales::percent_format()) +
+  scale_colour_manual(values = c("#000080", "#9C6114")) +
+  theme(
+    # panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.title = element_markdown(size = 32, family = 'roboto'),
+    plot.title.position = "plot",
+    legend.position = "none",
+    text = element_text(family = 'ibm', size = 18)
+  ) 
+  
+ggsave(filename = here::here("summary_figs/dot_plot.jpeg"), device = "jpeg", width = 290, height = 231, units = "mm", dpi = 300)
+
+# dev.off()
+```
+
+
+```{r}
+decile_shares %>%
+  mutate(
+    pctile = pctile / 2,
+    decile_share_lab = scales::percent(decile_share, accuracy = 0.1)
+  ) %>%
+  ggplot(aes(x = pctile, y = decile_share, fill = treated)) +
+  geom_col(position = "dodge") +
+  geom_text(aes(label = decile_share_lab), position = position_dodge(width = .09), vjust = -0.5) +
+  labs(
+    y = "Share of total income",
+    x = "Quintile of income distribution",
+    title = "Quintile income shares for 
+                          <b><span style = 'color:#9C6114;'>treated</span></b> and 
+                          <b><span style = 'color:#000080;'>control</span></b> parishes"
+  ) +
+  scale_y_continuous(labels = scales::percent_format(), limits = c(NA, .55)) +
+  scale_x_continuous(labels = scales::number_format(scale = 10, accuracy = 1)) +
+  scale_fill_manual(values = c("#000080", "#9C6114")) +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    plot.title = element_markdown(),
+        plot.title.position = "plot",
+        legend.position = "none"
+  ) 
+```
+
+Coefficient plot 
+
+```{r}
+coef_plot <- tribble(
+  ~ controls, ~ value, ~ se,
+  "Baseline specification", 0.371, 0.022, 
+  "Age and quadratic\nof age included", 0.332, 0.021,
+  "Occupation\n(HISCLASS) included", 0.211, 0.019,
+  "Education\nincluded", 0.204, 0.018
+) %>% 
+  mutate(controls = fct_reorder(controls, row_number(), .desc = TRUE)) %>% 
+  mutate(xmax = value + 2*se,
+         xmin = value - 2*se)
+
+
+coef_plot %>%
+  mutate(value_lab = scales::percent(value, accuracy = 1)) %>% 
+  ggplot(aes(value, y = controls)) +
+  geom_point(size = 4, colour = "#9C6114") +
+  geom_vline(xintercept = 0, lty = 2, colour = "#000080", linewidth = 2) +
+  geom_linerange(aes(xmin = xmin, xmax = xmax), colour = "#9C6114") +
+  geom_text(aes(label = value_lab), vjust = 2, size = 6) +
+  scale_x_continuous(labels = scales::percent_format()) +
+  labs(
+    # x = NULL,
+    x = "Effect of treatment on income",
+    # y = "Additional explanatory variable",
+    y = NULL,
+    title = "Income effect for migrating men from <b><span style = 'color:#9C6114;'>treated</span></b> parishes",
+    subtitle = "Relative to stayers in <b><span style = 'color:#000080;'>control</span></b> parishes"
+  ) +
+  scale_fill_manual(values = c("#000080", "#9C6114")) +
+  theme(
+    # panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    plot.title = element_markdown(size = 32, family = "roboto"),
+    plot.subtitle = element_markdown(size = 18, family = "roboto"),
+    plot.title.position = "plot",
+    legend.position = "none",
+    text = element_text(family = "ibm", size = 18)
+  )
+
+ggsave(filename = here::here("summary_figs/coef_plot.jpeg"), device = "jpeg", width = 290, height = 231, units = "mm", dpi = 300)
+```
+
+
+## Maps in three facets
+
+```{r}
+st_map_new <- read_rds("st_map_new.rds")
+elec_map_grid <- read_rds("elec_map_grid.rds")
+sv_counties <- st_read("sweden_24_couties.shp")
+
+# elec_map_grid %>% count(year)
+
+hydro <- tibble(name = c("Älvkarleby", "Olidan"),
+       x = c(17.4489, 12.2727),
+       y = c(60.5686,58.2750))
+
+hydro <- st_sf(st_sfc(st_point(c(17.4489, 60.5686)),st_point(c(12.2727, 58.2750))), crs = 4326) %>% 
+  mutate(name = case_when(
+    row_number() == 1 ~ "Älvkarleby",
+    TRUE ~ "Olidan"
+  )) %>% 
+  rename(geometry = st_sfc.st_point.c.17.4489..60.5686....st_point.c.12.2727..58.275...) %>% 
+  st_transform(crs = 4326)
+```
+
+
+```{r}
+ggplot() +
+  # Counties
+  geom_sf(data = sv_counties, fill = "white") +
+  # Treated parishes
+  geom_sf(aes(fill = "Treated parishes"),
+    data = st_map_new %>%
+      filter(type == "Electricity parish"), alpha = .8
+  ) +
+  # Lines
+  geom_sf(aes(colour = "Electricity lines"),
+    data = elec_map_grid %>%
+      filter(year == 1911), linewidth = 1.5, alpha = .5, show.legend = "line"
+  ) +
+  # Power plants
+  geom_point(aes(geometry = geometry, colour = "Hydropower plants"),
+    stat = StatSfCoordinates,
+    fun.geometry = sf::st_centroid,
+    size = 10, shape = 18, alpha = .9,
+    data = hydro
+  ) +
+  geom_sf_text(aes(label = name), data = hydro, size = 8, nudge_y = .35) +
+  # Fills
+  scale_fill_manual(values = c("Treated parishes" = "#9C6114"), guide = guide_legend(override.aes = list(linetype = "blank", shape = NA))) +
+  scale_color_manual(values = c("Electricity lines" = "#000080", "Hydropower plants" = "#ADCAB8"),
+                     guide = guide_legend(override.aes = list(linetype = c("solid", "blank"), 
+                                                               shape = c(NA, 18)))) +
+  coord_sf(
+    xlim = c(NA, 22),
+    ylim = c(55.6, 65)
+  ) +
+  theme_void() +
+  labs(
+    x = NULL,
+    y = NULL,
+    fill = NULL,
+    colour = NULL) +
+  theme(
+    axis.text = element_blank(),
+    panel.background = element_rect(fill = "#DCE9ED"),
+    panel.grid = element_blank(),
+    #
+    legend.position = c(0.77, 0.11),
+    text = element_text(family = "ibm", size = 15)
+  )
+```
+
+Now we want to make three together
+
+```{r}
+ggplot() +
+  # Counties
+  geom_sf(data = sv_counties, fill = "white") +
+  # Treated parishes
+  geom_sf(aes(fill = "Treated parishes"),
+    data = st_map_new %>%
+      filter(type == "Electricity parish"), alpha = .8
+  ) +
+  # Lines
+  geom_sf(aes(colour = "Electricity lines"),
+    data = elec_map_grid %>%
+      filter(year == 1900), linewidth = 1.5, alpha = .5, show.legend = "line"
+  ) +
+  # Power plants
+  geom_point(aes(geometry = geometry, colour = "Hydropower plants"),
+    stat = StatSfCoordinates,
+    fun.geometry = sf::st_centroid,
+    size = 10, shape = 18,
+    data = hydro
+  ) +
+  geom_sf_text(aes(label = name), data = hydro, size = 8, nudge_y = .35) +
+  # Fills
+  scale_fill_manual(values = c("Treated parishes" = "#9C6114"), guide = guide_legend(override.aes = list(linetype = "blank", shape = NA))) +
+  scale_color_manual(values = c("Electricity lines" = "#000080", "Hydropower plants" = "#ADCAB8"),
+                     guide = guide_legend(override.aes = list(linetype = c("solid", "blank"), 
+                                                               shape = c(NA, 18)))) +
+  coord_sf(
+    xlim = c(NA, 25),
+    ylim = c(55.6, 64)
+  ) +
+  theme_void() +
+  labs(
+    x = NULL,
+    y = NULL,
+    fill = NULL,
+    colour = NULL) +
+  theme(
+    axis.text = element_blank(),
+    panel.background = element_rect(fill = "#DCE9ED"),
+    panel.grid = element_blank(),
+    #
+    legend.position = "none",
+    # legend.position = c(0.77, 0.11),
+    text = element_text(family = "ibm", size = 12)
+  )
+
+ggsave(filename = here::here("summary_figs/map_1900.jpeg"), device = "jpeg", width = 300, height = 196, units = "mm", dpi = 300)
+```
+
+
+```{r}
+ggplot() +
+  # Counties
+  geom_sf(data = sv_counties, fill = "white") +
+  # Treated parishes
+  geom_sf(aes(fill = "Treated parishes"),
+    data = st_map_new %>%
+      filter(type == "Electricity parish"), alpha = .8
+  ) +
+  # Lines
+  geom_sf(aes(colour = "Electricity lines"),
+    data = elec_map_grid %>%
+      filter(year == 1911), linewidth = 1.5, alpha = .5, show.legend = "line"
+  ) +
+  # Power plants
+  geom_point(aes(geometry = geometry, colour = "Hydropower plants"),
+    stat = StatSfCoordinates,
+    fun.geometry = sf::st_centroid,
+    size = 10, shape = 18,
+    data = hydro
+  ) +
+  geom_sf_text(aes(label = name), data = hydro, size = 8, nudge_y = .35) +
+  # Fills
+  scale_fill_manual(values = c("Treated parishes" = "#9C6114"), guide = guide_legend(override.aes = list(linetype = "blank", shape = NA))) +
+  scale_color_manual(values = c("Electricity lines" = "#000080", "Hydropower plants" = "#ADCAB8"),
+                     guide = guide_legend(override.aes = list(linetype = c("solid", "blank"), 
+                                                               shape = c(NA, 18)))) +
+  coord_sf(
+    xlim = c(NA, 25),
+    ylim = c(55.6, 64)
+  ) +
+  theme_void() +
+  labs(
+    x = NULL,
+    y = NULL,
+    fill = NULL,
+    colour = NULL) +
+  theme(
+    axis.text = element_blank(),
+    panel.background = element_rect(fill = "#DCE9ED"),
+    panel.grid = element_blank(),
+    #
+    legend.position = "none",
+    # legend.position = c(0.77, 0.11),
+    text = element_text(family = "ibm", size = 12)
+  )
+
+ggsave(filename = here::here("summary_figs/map_1911.jpeg"), device = "jpeg", width = 300, height = 196, units = "mm", dpi = 300)
+```
+
+
+```{r}
+ggplot() +
+  # Counties
+  geom_sf(data = sv_counties, fill = "white") +
+  # Treated parishes
+  geom_sf(aes(fill = "Treated parishes"),
+    data = st_map_new %>%
+      filter(type == "Electricity parish"), alpha = .8
+  ) +
+  # Lines
+  geom_sf(aes(colour = "Electricity lines"),
+    data = elec_map_grid %>%
+      filter(year == 1926), linewidth = 1.5, alpha = .5, show.legend = "line"
+  ) +
+  # Power plants
+  geom_point(aes(geometry = geometry, colour = "Hydropower plants"),
+    stat = StatSfCoordinates,
+    fun.geometry = sf::st_centroid,
+    size = 10, shape = 18,
+    data = hydro
+  ) +
+  geom_sf_text(aes(label = name), data = hydro, size = 8, nudge_y = .35) +
+  # Fills
+  scale_fill_manual(values = c("Treated parishes" = "#9C6114"), guide = guide_legend(override.aes = list(linetype = "blank", shape = NA))) +
+  scale_color_manual(values = c("Electricity lines" = "#000080", "Hydropower plants" = "#ADCAB8"),
+                     guide = guide_legend(override.aes = list(linetype = c("solid", "blank"), 
+                                                               shape = c(NA, 18)))) +
+  coord_sf(
+    xlim = c(NA, 25),
+    ylim = c(55.6, 64)
+  ) +
+  theme_void() +
+  labs(
+    x = NULL,
+    y = NULL,
+    fill = NULL,
+    colour = NULL) +
+  theme(
+    axis.text = element_blank(),
+    panel.background = element_rect(fill = "#DCE9ED"),
+    panel.grid = element_blank(),
+    #
+    # legend.position = "none",
+    legend.position = c(0.77, 0.11),
+    text = element_text(family = "ibm", size = 12)
+  )
+
+ggsave(filename = here::here("summary_figs/map_1926.jpeg"), device = "jpeg", width = 300, height = 196, units = "mm", dpi = 300)
+```
+

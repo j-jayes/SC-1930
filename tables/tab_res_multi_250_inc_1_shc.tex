@@ -1,0 +1,32 @@
+\setlength{\LTpost}{0mm}
+\begin{longtable}{lcccc}
+\caption*{
+{\large \textbf{Regression results}} \\ 
+{\small Control group within 250km of Western Line}
+} \\ 
+\toprule
+ & \multicolumn{4}{c}{Outcome var: \textbf{log income (incl zero)}} \\ 
+\cmidrule(lr){2-5}
+  & OLS 1 & OLS 2 & OLS 3 & OLS 4 \\ 
+\midrule
+Born electricity parish and lives in parish of birth & 0.036** & 0.037*** & 0.036** & 0.029* \\ 
+ & (0.012) & (0.011) & (0.011) & (0.011) \\ 
+Born electricity parish & 0.021* & 0.025** & 0.027** & 0.033*** \\ 
+ & (0.010) & (0.009) & (0.010) & (0.010) \\ 
+Lives in parish of birth & -0.145*** & -0.090*** & -0.079*** & -0.053*** \\ 
+ & (0.002) & (0.002) & (0.002) & (0.002) \\ 
+Age, Age\textasciicircum{}2, Gender,Parish controls 1900  & X & X & X & X \\ 
+Hisclass &  & X & X & X \\ 
+Schooling &  &  & X & X \\ 
+Distance from birth parish to current parish &  &  &  & X \\ 
+Num.Obs. & 494649 & 491571 & 474502 & 459906 \\ 
+R2 & 0.209 & 0.310 & 0.327 & 0.326 \\ 
+R2 Adj. & 0.209 & 0.310 & 0.327 & 0.326 \\ 
+RMSE & 0.70 & 0.66 & 0.64 & 0.64 \\ 
+Std.Errors & IID & IID & IID & IID \\ 
+\bottomrule
+\end{longtable}
+\begin{minipage}{\linewidth}
++ p < 0.1, * p < 0.05, ** p < 0.01, *** p < 0.001\\
+\end{minipage}
+

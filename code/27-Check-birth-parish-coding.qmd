@@ -1,0 +1,88 @@
+---
+title: "Coding birth parish"
+format: html
+---
+
+## Purpose
+
+Checking the coding of birth parish from 1930 census
+
+```{r}
+library(tidyverse)
+
+df_reg <- read_rds(here::here("data", "clean_data", "df_ref.rds"))
+
+```
+
+```{r}
+library(histmaps)
+data("geom_meta")
+library(sf)
+p_map <- get_boundaries("1930", "parish")
+st_map <- p_map %>% left_join(geom_meta, by = c("geom_id"))
+st_map <- st_map %>%
+  mutate(parish_code_6 = as.numeric(str_sub(ref_code.x, 4, 9)))
+
+```
+
+```{r}
+df_reg %>% 
+  # head() %>% 
+  count(fscbkod, sort = T)
+
+```
+
+```{r}
+df_birth_parish <- df_reg %>% 
+  mutate(birth_parish = str_squish(fscbkod),
+         birth_parish = str_remove_all(birth_parish, "[:punct:]"),
+         birth_parish = as.numeric(birth_parish)) %>% 
+  select(id, birth_parish)
+```
+
+```{r}
+df_birth_parish
+
+test_join <- st_map %>% 
+  select(name, county, nadkod, forkod, birth_parish = parish_code_6) %>% 
+  right_join(df_birth_parish)
+```
+
+```{r}
+test_join
+```
+
+
+```{r}
+birth_parish_lookup <- st_map %>% 
+  select(name, county, nadkod, forkod, birth_parish = parish_code_6) %>% 
+  as_tibble() %>% 
+  select(-geometry)
+
+birth_parish_lookup <- birth_parish_lookup %>% 
+  rename(birth_parish_1930 = birth_parish) %>% 
+  relocate(birth_parish_1930, .before = name) %>% 
+  rename(parish_name = name,
+         nad_code = nadkod,
+         forsamling_code = forkod) 
+
+birth_parish_lookup %>% view()
+  write_dta(here::here("data", "birth_parish_lookup.dta"))
+```
+
+```{r}
+library(haven)
+
+test_join %>% 
+  relocate(id, .before = name) %>% 
+  as_tibble() %>% 
+  select(-geometry) %>% 
+  arrange(id) %>% 
+  add_count(id, name = "n_matches") %>% 
+  rename(parish_name = name,
+         nad_code = nadkod,
+         forsamling_code = forkod) %>% 
+  arrange(desc(n_matches)) %>% head(20) %>% view()
+  write_csv2(here::here("data", "birth_parish_coding.csv.gz"))
+```
+

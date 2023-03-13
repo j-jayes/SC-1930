@@ -1,0 +1,22 @@
+---
+title: "Conrol groups"
+format: html
+---
+
+```{r}
+library(tidyverse)
+
+control_groups <- read_rds("data/control-group-comparison.rds")
+```
+
+
+```{r}
+library(histmaps)
+
+map_1930 <- get_boundaries(1930, "parish")
+
+map_1930 %>% 
+  mutate(parish_code_short = str_remove(ref_code, "SE/"),
+         parish_code_short = str_remove(parish_code_short, ""))
+```
+

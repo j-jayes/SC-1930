@@ -1,0 +1,701 @@
+---
+title: "Regressions-Jan-23"
+format: html
+---
+
+```{r}
+library(tidyverse)
+
+library(gt)
+library(gtsummary)
+library(fixest)
+library(modelsummary)
+library(tidyverse)
+theme_set(theme_light())
+
+# df_reg <- df
+# df_reg %>% write_rds(here::here("data", "clean_data", "df_ref.rds"))
+
+df_reg <- read_rds(here::here("data", "clean_data", "df_ref.rds"))
+```
+
+3 Things we want to do.
+
+Baseline effect of living in an electricity parish (no controls).
+
+Gender effect.
+
+Electricity jobs.
+
+
+```{r}
+df_reg <- df_reg %>%
+  mutate(
+    hisclass_group_abb = fct_relevel(hisclass_group_abb, "Farmers and fishermen"),
+    age_2 = age^2) %>%
+    mutate(across(.cols = c(income_incl_zero, income_imputed_mean, income_imputed_median), log, .names = "log_{.col}"))
+
+df_reg_250 <- df_reg %>%
+  filter(
+    tce_group_250 %in% c("control", "treatment"),
+    adult_1930 == "Adult"
+  )
+
+df_reg_250 <- df_reg_250 %>%
+  mutate(schooling_abb = factor(schooling_abb, levels = c(NA, "Literate", "Primary school", "Post primary schooling", "Post-secondary and university")))
+```
+
+We need to do the filtering that Jakob suggested.
+
+So we want to include everyone who has enough data to be in the final regression, and not the people who only make the first regressions.
+
+Let's do it logically.
+
+```{r}
+df_reg_250 <- df_reg_250 %>%
+  select(
+    # Outcomes
+    log_income_incl_zero,
+    log_income_imputed_mean,
+    log_income_imputed_median,
+    # variables of interest
+    electricity_parish_living_in,
+    electricity_parish_born,
+    lives_in_parish_of_birth,
+    # controls
+    age,
+    age_2,
+    female,
+    hisclass_group_abb,
+    schooling_abb,
+    dist_bp_to_cp_km,
+    # dist_pp_to_cp_km
+  ) %>%
+  drop_na()
+
+
+library(haven)
+
+df_reg_250 %>% 
+  write_dta(here::here("data", "stata", "Swedish-census-1930-clean-250km-threshold.dta"))
+
+df_reg_250 %>% 
+  colnames() %>% 
+  clipr::write_clip()
+
+df_reg_250 %>%
+  mutate(treated = case_when(
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age >= 28 ~ "Treated",
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age < 28 ~ "Too young to be treated",
+    TRUE ~ "Control"
+  )) %>%
+  ggplot(aes(log_income_incl_zero, fill = treated)) +
+  geom_density(alpha = .5, adjust = 2) +
+  scale_fill_viridis_d() +
+  labs(
+    x = "Log income",
+    y = "Kernel density",
+    fill = "Group"
+  ) +
+  theme(legend.position = "bottom")
+```
+
+### Count in the quadrants
+
+```{r}
+df_reg_250 %>%
+  mutate(
+    mover = case_when(
+      lives_in_parish_of_birth == 1 ~ "Stayer",
+      TRUE ~ "Mover"
+    ),
+    electricity_parish_born = case_when(
+      electricity_parish_born == 1 ~ "Born in electricity parish",
+      TRUE ~ "Born in control parish"
+    )
+  ) %>%
+  count(electricity_parish_born, mover) %>%
+  pivot_wider(names_from = mover, values_from = n) %>%
+  gt() %>%
+  fmt_number(c(Mover, Stayer), decimals = 0, sep_mark = " ") %>%
+  cols_label(electricity_parish_born = "") %>%
+  tab_header(title = md("**Sample of movers and stayers**")) %>% 
+  gtsave("tables/movers_and_stayers.png")
+
+df_reg_250 %>%
+  mutate(
+    mover = case_when(
+      lives_in_parish_of_birth == 1 ~ "Stayer",
+      TRUE ~ "Mover"
+    ),
+    electricity_parish_born = case_when(
+      electricity_parish_born == 1 ~ "Born in electricity parish",
+      TRUE ~ "Born in control parish"
+    )
+  ) %>%
+  count(electricity_parish_born, mover) %>%
+  group_by(electricity_parish_born) %>% 
+  mutate(pct_share = n / sum(n)) %>% 
+  ungroup() %>% 
+  select(-n) %>% 
+  pivot_wider(names_from = mover, values_from = pct_share) %>%
+  gt() %>%
+  fmt_percent(c(Mover, Stayer), decimals = 0) %>%
+  cols_label(electricity_parish_born = "") %>%
+  tab_header(title = md("**Sample of movers and stayers (percent)**")) %>% 
+  gtsave("tables/movers_and_stayers_pct.png")
+```
+
+### Count in occupations
+
+```{r}
+hisclass_order <- tribble( ~ hisclass_group_abb, ~ order,
+                           "Elite", 1,
+                           "White collar", 2,
+                           "Foremen", 3,
+                           "Medium-skilled workers", 4,
+                           "Farmers and fishermen", 5,
+                           "Low-skilled workers", 6,
+                           "Unskilled workers", 7)
+
+jpeg(filename = "figures/distribution_of_hisclass.jpeg",width = 8, height = 6, units = "in", res = 1000)
+
+df_reg_250 %>%
+  mutate(mover = case_when(
+    lives_in_parish_of_birth == 1 ~ "Stayer",
+    TRUE ~ "Mover"
+  ),
+  electricity_parish_born = case_when(
+      electricity_parish_born == 1 ~ "Born in electricity parish",
+      TRUE ~ "Born in control parish"
+    )) %>%
+  count(electricity_parish_born, mover, hisclass_group_abb) %>%
+  inner_join(hisclass_order) %>% 
+  mutate(hisclass_group_abb = fct_reorder(hisclass_group_abb, order)) %>% 
+  ggplot(aes(mover, n, fill = hisclass_group_abb)) +
+  geom_col(position = "fill") +
+  facet_wrap(vars(electricity_parish_born)) +
+  scale_fill_brewer(palette = "Paired") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(x = NULL, 
+       fill = "Hisclass",
+       y = "Percentage share")
+
+dev.off()
+```
+
+### Count characteristis of women in sample
+
+```{r}
+library(tidytext)
+
+hisclass_order <- tribble( ~ hisclass_group_abb, ~ order,
+                           "Elite", 1,
+                           "White collar", 2,
+                           "Foremen", 3,
+                           "Medium-skilled workers", 4,
+                           "Farmers and fishermen", 5,
+                           "Low-skilled workers", 6,
+                           "Unskilled workers", 7)
+
+jpeg(filename = "figures/distribution_of_hisclass_women.jpeg",width = 14, height = 6, units = "in", res = 1000)
+
+df_reg_250 %>%
+  mutate(treated = case_when(
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age >= 28 ~ "Treated",
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age < 28 ~ "Too young to be treated",
+    TRUE ~ "Control"
+  )) %>%
+  filter(
+    female == 1,
+    treated != "Too young to be treated",
+    age <= 45,
+    !is.na(income_incl_zero),
+    !is.na(hisclass_group_abb)
+  ) %>%
+  inner_join(hisclass_order) %>%
+  mutate(hisclass_group_abb = fct_reorder(hisclass_group_abb, order)) %>%
+  count(treated, napp_title, hisclass_group_abb) %>%
+  group_by(treated) %>%
+  slice_max(n, n = 20) %>%
+  ungroup() %>%
+  mutate(napp_title = reorder_within(napp_title, n, treated)) %>%
+  ggplot(aes(n, napp_title, fill = hisclass_group_abb)) +
+  geom_col() +
+  scale_y_reordered() +
+  facet_wrap(vars(treated), scales = "free") +
+  labs(
+    x = "Number of women",
+    y = "Occupation",
+    fill = "Occupation group"
+  )
+
+dev.off()
+
+jpeg(filename = "figures/distribution_of_hisclass_men.jpeg",width = 14, height = 6, units = "in", res = 1000)
+
+df_reg_250 %>%
+  mutate(treated = case_when(
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age >= 28 ~ "Treated",
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age < 28 ~ "Too young to be treated",
+    TRUE ~ "Control"
+  )) %>%
+  filter(
+    female == 0,
+    treated != "Too young to be treated",
+    age <= 45,
+    !is.na(income_incl_zero),
+    !is.na(hisclass_group_abb)
+  ) %>%
+  inner_join(hisclass_order) %>%
+  mutate(hisclass_group_abb = fct_reorder(hisclass_group_abb, order)) %>%
+  count(treated, napp_title, hisclass_group_abb) %>%
+  group_by(treated) %>%
+  slice_max(n, n = 20) %>%
+  ungroup() %>%
+  mutate(napp_title = reorder_within(napp_title, n, treated)) %>%
+  ggplot(aes(n, napp_title, fill = hisclass_group_abb)) +
+  geom_col() +
+  scale_y_reordered() +
+  facet_wrap(vars(treated), scales = "free") +
+  labs(
+    x = "Number of men",
+    y = "Occupation",
+    fill = "Occupation group"
+  )
+
+dev.off()
+```
+
+## Share of employed in electricity jobs
+
+```{r}
+electricity_jobs <- tibble(title = c("Electricity generators", 
+                                     "Electricians and wiremen", 
+                                     "Linesmen: telephone, telegraph and electric",
+                                     "Farm workers, specialisation unknown",
+                                     "General farmers and farmers nfs",
+                                     "Factory labourers (unspecified)")) %>%
+  # bind_rows(metal_machine_jobs) %>% 
+  mutate(Electricity_related = case_when(
+    row_number() <= 3 ~ TRUE,
+    TRUE ~ FALSE
+  ))
+
+
+# metal_machine_jobs <- df_reg_250 %>%
+#   mutate(treated = case_when(
+#     electricity_parish_born == 1 & electricity_parish_living_in == 1 & age >= 28 ~ "Treated",
+#     electricity_parish_born == 1 & electricity_parish_living_in == 1 & age < 28 ~ "Too young to be treated",
+#     TRUE ~ "Control"
+#   )) %>%
+#   filter(
+#     female == 0,
+#     treated != "Too young to be treated",
+#     age <= 45,
+#     !is.na(income_incl_zero),
+#     !is.na(hisclass_group_abb)
+#   ) %>%
+#   inner_join(hisclass_order) %>%
+#     count(treated, napp_title, hisclass_group_abb) %>%
+#   group_by(treated) %>%
+#   slice_max(n, n = 60) %>%
+#   ungroup() %>% 
+#   filter(str_detect(napp_title, "metal|machine")) %>% 
+#   select(title = napp_title)
+  
+  
+df_reg_250 %>%
+  mutate(treated = case_when(
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age >= 28 ~ "Treated",
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age < 28 ~ "Too young to be treated",
+    TRUE ~ "Control"
+  )) %>%
+  filter(
+    female == 0,
+    treated != "Too young to be treated",
+    age <= 45,
+    !is.na(income_incl_zero),
+    !is.na(hisclass_group_abb)
+  ) %>%
+  inner_join(hisclass_order) %>%
+    count(treated, napp_title, hisclass_group_abb) %>%
+  group_by(treated) %>% 
+  mutate(pct_share = n / sum(n)) %>% 
+  ungroup() %>% 
+  inner_join(electricity_jobs, by = c("napp_title" = "title")) %>% 
+  mutate(napp_title = case_when(
+    napp_title == "Factory labourers (unspecified)" ~ "Factory labourers",
+    napp_title == "Farm workers, specialisation unknown" ~ "Farm workers",
+    napp_title == "General farmers and farmers nfs" ~ "Farmers",
+    napp_title == "Linesmen: telephone, telegraph and electric" ~ "Linesmen: telephone,\ntelegraph and electric",
+    TRUE ~ napp_title
+  )) %>% 
+  mutate(napp_title = fct_reorder(napp_title, pct_share),
+         pct_share_lab = scales::percent(pct_share, accuracy = 0.1)) %>% 
+  ggplot(aes(pct_share, napp_title, fill = Electricity_related)) +
+  geom_col(position = "dodge") +
+  geom_text(aes(label = pct_share_lab), hjust = -0.1) +
+  scale_x_continuous(labels = scales::percent_format(), limits = c(NA, .24)) +
+  scale_fill_manual(values = c("#E9C4C7", "#B9D3DB")) +
+  facet_wrap(vars(treated)) +
+  labs(fill = "Electricity related job",
+       y = NULL,
+       x = "Share of total jobs",
+        title = "Share of employment in <b><span style = 'color:#B9D3DB;'>electricity related</span></b> and <b><span style = 'color:#E9C4C7;'>other</span></b> jobs",) +
+  theme(
+    # panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    plot.title = element_markdown(size = 32, family = "roboto"),
+    plot.subtitle = element_markdown(size = 18, family = "roboto"),
+    plot.title.position = "plot",
+    legend.position = "none",
+    text = element_text(family = "ibm", size = 18)
+  )
+  
+ggsave(filename = here::here("summary_figs/job_share_plot.jpeg"), device = "jpeg", width = 290, height = 231, units = "mm", dpi = 300)
+```
+
+
+
+
+
+```{r}
+df_reg_250 %>%
+  mutate(treated = case_when(
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age >= 28 ~ "Treated",
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age < 28 ~ "Too young to be treated",
+    TRUE ~ "Control"
+  )) %>%
+  filter(
+    female == 1,
+    treated != "Too young to be treated",
+    age <= 45,
+    !is.na(income_incl_zero),
+    !is.na(hisclass_group_abb)
+  ) %>% 
+  count(civ)
+  group_by(civ) %>% 
+  summarise(pct = n / sum(n))
+```
+
+
+```{r}
+df_reg_250 %>%
+  mutate(treated = case_when(
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age >= 28 ~ "Treated",
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age < 28 ~ "Too young to be treated",
+    TRUE ~ "Control"
+  )) %>%
+  filter(
+    female == 1,
+    treated != "Too young to be treated",
+    age <= 45,
+    !is.na(income_incl_zero),
+    !is.na(hisclass_group_abb)
+  ) %>%
+  count(treated, hisclass_group_abb) %>% 
+  inner_join(hisclass_order) %>% 
+  mutate(hisclass_group_abb = fct_reorder(hisclass_group_abb, order)) %>% 
+  ggplot(aes(n, hisclass_group_abb)) +
+  geom_col() +
+  scale_y_reordered() +
+  facet_wrap(vars(treated), scales = "free") +
+  labs(
+    x = "Number of women",
+    y = "Occupation"
+  )
+         
+```
+
+
+```{r}
+# df_reg_150 <- df_reg %>%
+#   filter(
+#     tce_group_150 %in% c("control", "treatment"),
+#     adult_1930 == "Adult"
+#   )
+# 
+# df_reg_100 <- df_reg %>%
+#   filter(
+#     tce_group_100 %in% c("control", "treatment"),
+#     adult_1930 == "Adult"
+#   )
+
+```
+
+
+```{r}
+res_multi_250_inc_1 <- feols(log_income_incl_zero ~ electricity_parish_born*lives_in_parish_of_birth + age + age_2 + female + csw0(hisclass_group_abb, schooling_abb, dist_bp_to_cp_km), df_reg_250)
+
+res_multi_250_inc_2 <- feols(log_income_imputed_mean ~ electricity_parish_born * lives_in_parish_of_birth + age + age_2 + female + csw0(hisclass_group_abb, schooling_abb, dist_bp_to_cp_km), df_reg_250)
+
+res_multi_250_inc_3 <- feols(log_income_imputed_median ~ electricity_parish_born * lives_in_parish_of_birth + age + age_2 + female + csw0(hisclass_group_abb, schooling_abb, dist_bp_to_cp_km), df_reg_250)
+```
+
+
+
+```{r}
+cm <- c(
+  "electricity_parish_born:lives_in_parish_of_birth" = "Born electricity parish and lives in parish of birth",
+  "electricity_parish_born" = "Born electricity parish",
+  "lives_in_parish_of_birth" = "Lives in parish of birth"
+)
+
+rows <- tribble(
+  ~term,
+  ~`rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + electricity_parish_born:lives_in_parish_of_birth`,
+  ~`rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + electricity_parish_born:lives_in_parish_of_birth`,
+  ~`rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + electricity_parish_born:lives_in_parish_of_birth`,
+  ~`rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km + electricity_parish_born:lives_in_parish_of_birth`,
+  "Age, Age^2, Gender", "X", "X", "X", "X",
+  "Hisclass", "", "X", "X", "X",
+  "Schooling", "", "", "X", "X",
+  "Distance from birth parish to current parish", "", "", "", "X"
+  
+)
+
+attr(rows, 'position') <- c(7, 8, 9, 10)
+```
+
+
+Regression 1 - baseline
+
+```{r}
+res_multi_250_inc_1_baseline <- feols(log_income_incl_zero ~ electricity_parish_living_in + age + age_2 + female + csw0(hisclass_group_abb, schooling_abb, dist_bp_to_cp_km), df_reg_250)
+
+# modelsummary(res_multi_250_inc_1_baseline, output = "gt")
+
+cm_1 <- c("electricity_parish_living_in" = "Lives in electricity parish")
+
+rows <- tribble(
+  ~term,
+  ~`rhs: electricity_parish_living_in + age + age_2 + female`,
+  ~`rhs: electricity_parish_living_in + age + age_2 + female + hisclass_group_abb`,
+  ~`rhs: electricity_parish_living_in + age + age_2 + female + hisclass_group_abb + schooling_abb`,
+  ~`rhs: electricity_parish_living_in + age + age_2 + female + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km`,
+  "Age, Age^2, Gender", "X", "X", "X", "X",
+  "Hisclass", "", "X", "X", "X",
+  "Schooling", "", "", "X", "X",
+  "Distance from birth parish to current parish", "", "", "", "X"
+)
+```
+
+```{r}
+f <- function(x) formatC(x, digits = 2, big.mark = ",", format = "f")
+
+
+tab_res_multi_250_inc_1_baseline <- modelsummary(res_multi_250_inc_1_baseline,
+                    stars = TRUE,
+                    coef_map = cm_1,
+                    add_rows = rows,
+                    output = "gt",
+                    fmt = f)
+
+tab_res_multi_250_inc_1_baseline %>% 
+  cols_label(
+    `rhs: electricity_parish_living_in + age + age_2 + female` = "OLS 1",
+    `rhs: electricity_parish_living_in + age + age_2 + female + hisclass_group_abb` = "OLS 2",
+    `rhs: electricity_parish_living_in + age + age_2 + female + hisclass_group_abb + schooling_abb` = "OLS 3",
+    `rhs: electricity_parish_living_in + age + age_2 + female + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km` = "OLS 4"
+  ) %>%
+  tab_spanner(
+    label = md("Outcome var: **log income (incl zero)**"),
+    columns = -1
+  ) %>%
+  tab_header(
+    title = md("**Regression results: Baseline**"),
+    # subtitle = "Control group within 250km of Western Line"
+  ) %>% 
+  gtsave(filename = "tables/tab_res_multi_250_inc_1_baseline.png")
+
+```
+
+Regression 2 - women
+
+```{r}
+res_multi_250_inc_1_female <- feols(log_income_incl_zero ~ electricity_parish_living_in + age + age_2 + csw0(hisclass_group_abb, schooling_abb, dist_bp_to_cp_km), df_reg_250 %>%
+  filter(female == TRUE))
+
+# modelsummary(res_multi_250_inc_1_baseline, output = "gt")
+
+cm_1 <- c("electricity_parish_living_in" = "Lives in electricity parish")
+
+rows <- tribble(
+  ~term,
+  ~`rhs: electricity_parish_living_in + age + age_2`,
+  ~`rhs: electricity_parish_living_in + age + age_2 + hisclass_group_abb`,
+  ~`rhs: electricity_parish_living_in + age + age_2 + hisclass_group_abb + schooling_abb`,
+  ~`rhs: electricity_parish_living_in + age + age_2 + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km`,
+  "Age, Age^2", "X", "X", "X", "X",
+  "Hisclass", "", "X", "X", "X",
+  "Schooling", "", "", "X", "X",
+  "Distance from birth parish to current parish", "", "", "", "X"
+)
+```
+
+```{r}
+f <- function(x) formatC(x, digits = 2, big.mark = ",", format = "f")
+
+
+tab_res_multi_250_inc_1_female <- modelsummary(res_multi_250_inc_1_female,
+                    stars = TRUE,
+                    coef_map = cm_1,
+                    add_rows = rows,
+                    output = "gt",
+                    fmt = f)
+
+tab_res_multi_250_inc_1_female %>% 
+  cols_label(
+    `rhs: electricity_parish_living_in + age + age_2` = "OLS 1",
+    `rhs: electricity_parish_living_in + age + age_2 + hisclass_group_abb` = "OLS 2",
+    `rhs: electricity_parish_living_in + age + age_2 + hisclass_group_abb + schooling_abb` = "OLS 3",
+    `rhs: electricity_parish_living_in + age + age_2 + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km` = "OLS 4"
+  ) %>%
+  tab_spanner(
+    label = md("Outcome var: **log income (incl zero)**"),
+    columns = -1
+  ) %>%
+  tab_header(
+    title = md("**Regression results: Baseline - Female only**"),
+    # subtitle = "Control group within 250km of Western Line"
+  ) %>% 
+  gtsave(filename = "tables/tab_res_multi_250_inc_1_female.png")
+
+```
+
+Regression 2 - men
+
+```{r}
+res_multi_250_inc_1_male <- feols(log_income_incl_zero ~ electricity_parish_living_in + age + age_2 + csw0(hisclass_group_abb, schooling_abb, dist_bp_to_cp_km), df_reg_250 %>%
+  filter(female == FALSE))
+
+# modelsummary(res_multi_250_inc_1_baseline, output = "gt")
+
+cm_1 <- c("electricity_parish_living_in" = "Lives in electricity parish")
+
+rows <- tribble(
+  ~term,
+  ~`rhs: electricity_parish_living_in + age + age_2`,
+  ~`rhs: electricity_parish_living_in + age + age_2 + hisclass_group_abb`,
+  ~`rhs: electricity_parish_living_in + age + age_2 + hisclass_group_abb + schooling_abb`,
+  ~`rhs: electricity_parish_living_in + age + age_2 + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km`,
+  "Age, Age^2", "X", "X", "X", "X",
+  "Hisclass", "", "X", "X", "X",
+  "Schooling", "", "", "X", "X",
+  "Distance from birth parish to current parish", "", "", "", "X"
+)
+```
+
+```{r}
+f <- function(x) formatC(x, digits = 2, big.mark = ",", format = "f")
+
+
+tab_res_multi_250_inc_1_male <- modelsummary(res_multi_250_inc_1_male,
+                    stars = TRUE,
+                    coef_map = cm_1,
+                    add_rows = rows,
+                    output = "gt",
+                    fmt = f)
+
+tab_res_multi_250_inc_1_male %>% 
+  cols_label(
+    `rhs: electricity_parish_living_in + age + age_2` = "OLS 1",
+    `rhs: electricity_parish_living_in + age + age_2 + hisclass_group_abb` = "OLS 2",
+    `rhs: electricity_parish_living_in + age + age_2 + hisclass_group_abb + schooling_abb` = "OLS 3",
+    `rhs: electricity_parish_living_in + age + age_2 + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km` = "OLS 4"
+  ) %>%
+  tab_spanner(
+    label = md("Outcome var: **log income (incl zero)**"),
+    columns = -1
+  ) %>%
+  tab_header(
+    title = md("**Regression results: Baseline - Male only**"),
+    # subtitle = "Control group within 250km of Western Line"
+  ) %>% 
+  gtsave(filename = "tables/tab_res_multi_250_inc_1_male.png")
+
+```
+
+Regression 4 - how does living in your parish of birth impact you?
+
+```{r}
+res_multi_250_inc_1_parish_of_birth <- feols(log_income_incl_zero ~ electricity_parish_born * lives_in_parish_of_birth + age + age_2 + female + csw0(hisclass_group_abb, schooling_abb, dist_bp_to_cp_km), df_reg_250)
+
+cm <- c(
+  "electricity_parish_born:lives_in_parish_of_birth" = "Born electricity parish and lives in parish of birth",
+  "electricity_parish_born" = "Born electricity parish",
+  "lives_in_parish_of_birth" = "Lives in parish of birth"
+)
+
+rows <- tribble(
+  ~term,
+  ~`rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + electricity_parish_born:lives_in_parish_of_birth`,
+  ~`rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + electricity_parish_born:lives_in_parish_of_birth`,
+  ~`rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + electricity_parish_born:lives_in_parish_of_birth`,
+  ~`rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km + electricity_parish_born:lives_in_parish_of_birth`,
+  "Age, Age^2, Gender", "X", "X", "X", "X",
+  "Hisclass", "", "X", "X", "X",
+  "Schooling", "", "", "X", "X",
+  "Distance from birth parish to current parish", "", "", "", "X"
+  
+)
+
+attr(rows, 'position') <- c(7, 8, 9, 10)
+```
+
+
+```{r}
+f <- function(x) formatC(x, digits = 2, big.mark = ",", format = "f")
+
+
+tab_res_multi_250_inc_1_parish_of_birth <- modelsummary(res_multi_250_inc_1_parish_of_birth,
+                    stars = TRUE,
+                    coef_map = cm,
+                    add_rows = rows,
+                    output = "gt",
+                    fmt = f)
+
+tab_res_multi_250_inc_1_parish_of_birth %>% 
+  cols_label(
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + electricity_parish_born:lives_in_parish_of_birth` = "OLS 1",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 2",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 3",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km + electricity_parish_born:lives_in_parish_of_birth` = "OLS 4"
+  ) %>%
+  tab_spanner(
+    label = md("Outcome var: **log income (incl zero)**"),
+    columns = -1
+  ) %>%
+  tab_header(
+    title = md("**Regression results: Parish of birth**"),
+    # subtitle = "Control group within 250km of Western Line"
+  ) %>% 
+  gtsave(filename = "tables/tab_res_multi_250_inc_1_parish_of_birth.png")
+
+```
+
+
+```{r}
+
+```
+
+
+
+### Distribution of skills kernel density plot
+
+```{r}
+df_reg_250 %>%
+  count(hisclass_group_abb) %>%
+  mutate(hisclass_group_num = case_when(
+    hisclass_group_abb == "Farmers and fishermen" ~ 4,
+    hisclass_group_abb == "Elite" ~ 1,
+    hisclass_group_abb == "White collar" ~ 2,
+    hisclass_group_abb == "Medium-skilled workers" ~ 3,
+    hisclass_group_abb == "Low-skilled workers" ~ 5,
+    hisclass_group_abb == "Unskilled workers" ~ 6,
+  ))
+
+```
+

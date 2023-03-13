@@ -39,7 +39,7 @@ library(haven)
 
 parishes_1900 <- read_dta(here::here("replication", "data", "data Table 2.dta"))
 
-parishes_1900 %>% view()
+parishes_1900
 ```
 
 Stata:
@@ -92,7 +92,6 @@ parishes_1900_means %>%
   bind_cols(parishes_1900_ttest %>% select(-name, -variable)) %>%
   gt()
 
-
 ```
 
 
@@ -118,10 +117,250 @@ groups_1930 <- groups_1930 %>%
 library(gtsummary)
 
 groups_1930 %>%
-  select(ever_iline, labforce:shc7) %>%
-  drop_na() %>%
-  tbl_summary(by = ever_iline, statistic = list(all_continuous() ~ "{mean} ({sd})", all_categorical() ~ "{n} ({p}%)")) %>%
+  mutate(ever_iline = ifelse(ever_iline == 0, 
+                             "NEP",
+                             "EP")) %>% 
+  select(ever_iline, labforce:shc7) %>% 
+  tbl_summary(
+    by = ever_iline,
+    missing = "no",
+    statistic = list(
+      all_continuous() ~ "{mean} ({sd})",
+      all_categorical() ~ "{n} ({p}%)"
+    ),
+    label = list(
+      labforce ~ "Labour force",
+      shc1 ~ "Elite",
+      shc2 ~ "White collar",
+      shc3 ~ "Foremen",
+      shc4 ~ "Medium skilled",
+      shc5 ~ "Farmers",
+      shc6 ~ "Lower skilled",
+      shc7 ~ "Unskilled"
+    )
+  ) %>%
   add_difference() %>%
+  modify_header(label ~ "**Variable**",
+                stat_1 ~ "**(1)**",
+                stat_2 ~ "**(2)**",
+                estimate ~ "**(3)**",
+                p.value ~ "**(4)**") %>%
   add_significance_stars()
+  as_kable_extra(format = "latex",  booktabs = T)
 ```
+
+
+```{r}
+library(kableExtra)
+
+parishes_1900 %>%
+  mutate(ever_iline = ifelse(ever_iline == 0,
+    "NEP",
+    "EP"
+  )) %>%
+  select(ever_iline, labforce:shc7) %>%
+  tbl_summary(
+    by = ever_iline,
+    missing = "no",
+    statistic = list(
+      all_continuous() ~ "{mean} ({sd})",
+      all_categorical() ~ "{n} ({p}%)"
+    ),
+    label = list(
+      labforce ~ "Labour force",
+      shc1 ~ "Elite",
+      shc2 ~ "White collar",
+      shc3 ~ "Foremen",
+      shc4 ~ "Medium skilled",
+      shc5 ~ "Farmers",
+      shc6 ~ "Lower skilled",
+      shc7 ~ "Unskilled"
+    )
+  ) %>%
+  add_difference() %>%
+  modify_header(
+    label ~ "",
+    stat_1 ~ "Electricity parish",
+    stat_2 ~ "Non-electricity parish",
+    estimate ~ "Difference",
+    p.value ~ "p-value"
+  ) %>%
+  modify_spanning_header(
+    stat_1 ~ "**(1)**",
+    stat_2 ~ "**(2)**",
+    estimate ~ "**(3)**",
+    p.value ~ "**(4)**"
+  ) %>%
+  add_significance_stars() %>%
+  as_kable_extra(
+    format = "latex",
+    booktabs = T
+  )
+  
+```
+
+Entire sample
+
+```{r}
+groups_1930 %>%
+  mutate(ever_iline = ifelse(ever_iline == 0, 
+                             "NEP",
+                             "EP")) %>% 
+  select(ever_iline, labforce:shc7) %>% 
+    tbl_summary(
+    by = ever_iline,
+    missing = "no",
+    statistic = list(
+      all_continuous() ~ "{mean} ({sd})",
+      all_categorical() ~ "{n} ({p}%)"
+    ),
+    label = list(
+      labforce ~ "Labour force",
+      shc1 ~ "Elite",
+      shc2 ~ "White collar",
+      shc3 ~ "Foremen",
+      shc4 ~ "Medium skilled",
+      shc5 ~ "Farmers",
+      shc6 ~ "Lower skilled",
+      shc7 ~ "Unskilled"
+    )
+  ) %>%
+  add_difference() %>%
+  modify_header(
+    label ~ "",
+    stat_1 ~ "Electricity parish",
+    stat_2 ~ "Non-electricity parish",
+    estimate ~ "Difference",
+    p.value ~ "p-value"
+  ) %>%
+  modify_spanning_header(
+    stat_1 ~ "**(1)**",
+    stat_2 ~ "**(2)**",
+    estimate ~ "**(3)**",
+    p.value ~ "**(4)**"
+  ) %>%
+  add_significance_stars()
+  as_kable_extra(
+    format = "latex",
+    booktabs = T
+  )
+```
+
+
+tce_group_100
+
+
+```{r}
+groups_1930 %>%
+  filter(tce_group_100 %in% c("control", "treatment")) %>% 
+  mutate(ever_iline = ifelse(ever_iline == 0, 
+                             "NEP",
+                             "EP")) %>% 
+  select(ever_iline, labforce:shc7) %>% 
+  mutate(number = "No. of Parishes") %>% 
+    tbl_summary(
+    by = ever_iline,
+    missing = "no",
+    statistic = list(
+      all_continuous() ~ "{mean} ({sd})",
+      number ~ "{n}"
+    ),
+    label = list(
+      labforce ~ "Labour force",
+      shc1 ~ "Elite",
+      shc2 ~ "White collar",
+      shc3 ~ "Foremen",
+      shc4 ~ "Medium skilled",
+      shc5 ~ "Farmers",
+      shc6 ~ "Lower skilled",
+      shc7 ~ "Unskilled",
+      number ~ "No. of parishes"
+    )
+  ) %>%
+  add_difference() %>%
+  modify_header(
+    label ~ "",
+    stat_1 ~ "Electricity parish",
+    stat_2 ~ "Non-electricity parish",
+    estimate ~ "Difference",
+    p.value ~ "p-value"
+  ) %>%
+  modify_spanning_header(
+    stat_1 ~ "**(1)**",
+    stat_2 ~ "**(2)**",
+    estimate ~ "**(3)**",
+    p.value ~ "**(4)**"
+  ) %>%
+  add_significance_stars() %>% 
+  modify_column_hide(column = std.error) %>% 
+  as_kable_extra(
+    format = "latex",
+    booktabs = T,
+    escape = TRUE
+  )
+```
+
+
+
+### Function to make the table
+
+```{r}
+
+make_table <- function(data, title, key) {
+  data %>%
+    mutate(ever_iline = ifelse(ever_iline == 0,
+      "NEP",
+      "EP"
+    )) %>%
+    select(ever_iline, labforce:shc7) %>%
+    mutate(number = "No. of Parishes") %>%
+    tbl_summary(
+      by = ever_iline,
+      missing = "no",
+      statistic = list(
+        all_continuous() ~ "{mean} ({sd})",
+        number ~ "{n}"
+      ),
+      label = list(
+        labforce ~ "Labour force",
+        shc1 ~ "Elite",
+        shc2 ~ "White collar",
+        shc3 ~ "Foremen",
+        shc4 ~ "Medium skilled",
+        shc5 ~ "Farmers",
+        shc6 ~ "Lower skilled",
+        shc7 ~ "Unskilled",
+        number ~ "No. of parishes"
+      )
+    ) %>%
+    add_difference() %>%
+    modify_header(
+      label ~ "",
+      stat_1 ~ "Electricity parish",
+      stat_2 ~ "Non-electricity parish",
+      estimate ~ "Difference",
+      p.value ~ "p-value"
+    ) %>%
+    modify_spanning_header(
+      stat_1 ~ "**(1)**",
+      stat_2 ~ "**(2)**",
+      estimate ~ "**(3)**",
+      p.value ~ "**(4)**"
+    ) %>%
+    add_significance_stars() %>%
+    modify_column_hide(column = std.error) %>%
+    as_kable_extra(
+      format = "latex",
+      booktabs = T,
+      escape = TRUE,
+      caption = paste0(title, " \\label{tab:", key, "}")
+    )
+}
+
+groups_1930 %>%
+  filter(tce_group_250 %in% c("control", "treatment")) %>%
+  make_table(data = ., title = "250km band", key = "control-100")
+
+```
+
 

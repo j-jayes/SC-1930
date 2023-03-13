@@ -580,8 +580,8 @@ rows <- tribble(
 
 attr(rows, 'position') <- c(7, 8, 9, 10)
 
-# tab <- modelsummary(res_multi_250_inc_1, 
-#                     stars = TRUE, 
+# tab <- modelsummary(res_multi_250_inc_1,
+#                     stars = TRUE,
 #                     coef_map = cm,
 #                     add_rows = rows,
 #                     output = "gt")
@@ -613,7 +613,7 @@ tab_res_multi_250_inc_1 <- modelsummary(res_multi_250_inc_1,
                     add_rows = rows,
                     output = "gt")
 
-tab_res_multi_250_inc_1 %>%
+tab_res_multi_250_inc_1 %>% 
   cols_label(
     `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + electricity_parish_born:lives_in_parish_of_birth` = "OLS 1",
     `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 2",
@@ -628,8 +628,71 @@ tab_res_multi_250_inc_1 %>%
     title = md("**Regression results**"),
     subtitle = "Control group within 250km of Western Line"
   ) %>% 
+  gt::gtsave("tables/tab_res_multi_250_inc_1.tex")
   gtsave(filename = "tables/tab_res_multi_250_inc_1.png")
 ```
+
+### Incl 1900 controls
+
+```{r}
+parishes_1900 <- haven::read_dta(here::here("replication", "data", "data Table 2.dta"))
+
+parishes_1900 <- parishes_1900 %>% 
+  mutate(scbkod = as.numeric(str_remove(parish_code, "\\d\\d\\d$")))
+
+df_reg_250 <- df_reg_250 %>% 
+  left_join(parishes_1900)
+
+res_multi_250_inc_1_shc <- feols(log_income_incl_zero ~ electricity_parish_born*lives_in_parish_of_birth + age + age_2 + female + shc1 + shc2 + shc3 + shc4 + shc5 + shc6 + shc7 + csw0(hisclass_group_abb, schooling_abb, dist_bp_to_cp_km), df_reg_250)
+
+cm <- c(
+  "electricity_parish_born:lives_in_parish_of_birth" = "Born electricity parish and lives in parish of birth",
+  "electricity_parish_born" = "Born electricity parish",
+  "lives_in_parish_of_birth" = "Lives in parish of birth"
+)
+
+rows <- tribble(
+  ~term,
+  ~`rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + shc1 + shc2 + shc3 + shc4 + shc5 + shc6 + shc7 + electricity_parish_born:lives_in_parish_of_birth`,
+  ~`rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + shc1 + shc2 + shc3 + shc4 + shc5 + shc6 + shc7 + hisclass_group_abb + electricity_parish_born:lives_in_parish_of_birth`,
+  ~`rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + shc1 + shc2 + shc3 + shc4 + shc5 + shc6 + shc7 + hisclass_group_abb + schooling_abb + electricity_parish_born:lives_in_parish_of_birth`,
+  ~`rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + shc1 + shc2 + shc3 + shc4 + shc5 + shc6 + shc7 + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km + electricity_parish_born:lives_in_parish_of_birth`,
+  "Age, Age^2, Gender,Parish controls 1900 ", "X", "X", "X", "X",
+  "Hisclass", "", "X", "X", "X",
+  "Schooling", "", "", "X", "X",
+  "Distance from birth parish to current parish", "", "", "", "X"
+  
+)
+
+attr(rows, 'position') <- c(7, 8, 9, 10, 11)
+
+# modelsummary(res_multi_250_inc_1_shc)
+
+tab_res_multi_250_inc_1_shc <- modelsummary(res_multi_250_inc_1_shc,
+                    stars = TRUE,
+                    coef_map = cm,
+                    add_rows = rows,
+                    output = "gt")
+
+tab_res_multi_250_inc_1_shc %>% 
+  cols_label(
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + shc1 + shc2 + shc3 + shc4 + shc5 + shc6 + shc7 + electricity_parish_born:lives_in_parish_of_birth` = "OLS 1",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + shc1 + shc2 + shc3 + shc4 + shc5 + shc6 + shc7 + hisclass_group_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 2",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + shc1 + shc2 + shc3 + shc4 + shc5 + shc6 + shc7 + hisclass_group_abb + schooling_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 3",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + shc1 + shc2 + shc3 + shc4 + shc5 + shc6 + shc7 + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km + electricity_parish_born:lives_in_parish_of_birth` = "OLS 4"
+  ) %>%
+  tab_spanner(
+    label = md("Outcome var: **log income (incl zero)**"),
+    columns = -1
+  ) %>%
+  tab_header(
+    title = md("**Regression results**"),
+    subtitle = "Control group within 250km of Western Line"
+  ) %>% 
+  gt::gtsave("tables/tab_res_multi_250_inc_1_shc.tex")
+
+```
+
 
 ![](tables/tab_res_multi_250_inc_1.png)
 
@@ -853,3 +916,47 @@ tab_res_multi_100_inc_3 %>%
 ```
 
 ![](tables/tab_res_multi_100_inc_3.png)
+
+
+### Now making it for kable extra output
+
+```{r}
+tab_res_multi_250_inc_1 <- modelsummary(res_multi_250_inc_1,
+                    stars = TRUE,
+                    coef_map = cm,
+                    add_rows = rows,
+                    output = "gt")
+
+t1 <- tab_res_multi_250_inc_1 %>%
+  cols_label(
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + electricity_parish_born:lives_in_parish_of_birth` = "OLS 1",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 2",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + electricity_parish_born:lives_in_parish_of_birth` = "OLS 3",
+    `rhs: electricity_parish_born + lives_in_parish_of_birth + age + age_2 + female + hisclass_group_abb + schooling_abb + dist_bp_to_cp_km + electricity_parish_born:lives_in_parish_of_birth` = "OLS 4"
+  ) %>%
+  tab_spanner(
+    label = md("Outcome var: **log income (incl zero)**"),
+    columns = -1
+  ) %>%
+  tab_header(
+    title = md("**Regression results**"),
+    subtitle = "Control group within 250km of Western Line"
+  ) %>% 
+  gt::as_raw_html(inline_css = TRUE)
+  gtsave(filename = "tables/tab_res_multi_250_inc_1.png")
+
+library(rvest)  
+    
+table <- rvest::read_html(t1)
+
+
+table <- table %>% 
+  html_table()
+  
+table <- table[[1]]
+
+table %>% as_tibble() %>% kableExtra::kable(format = "latex")
+
+as.tibble()
+```
+

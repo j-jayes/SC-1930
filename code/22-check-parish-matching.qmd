@@ -33,13 +33,18 @@ library(histmaps)
 # geom_meta %>% view()
 
 map_1900 <- get_boundaries(1900, "parish")
+```
 
+
+```{r}
 map_1930 <- get_boundaries(1930, "parish")
+```
 
+
+```{r}
 map_1900 %>%
   as_tibble() %>%
-  anti_join(map_1930, by = c("ref_code")) %>%
-  view()
+  anti_join(map_1930, by = c("ref_code")) 
 ```
 
 So we get some additional parishes in 1930.
