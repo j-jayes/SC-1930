@@ -1,0 +1,17 @@
+---
+title: "Effect on incomes by type"
+format: html
+---
+
+## Purpose
+
+Make use of the new occupational classifications from Jakob to find the effect on income by type - be it electricity related directly, indirectly, or not.
+
+### Planning
+
+Import the data, generate log income variables, Create occupational classifications, run regression.
+
+```{r}
+
+```
+

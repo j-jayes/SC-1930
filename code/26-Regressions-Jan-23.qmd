@@ -358,6 +358,21 @@ ggsave(filename = here::here("summary_figs/job_share_plot.jpeg"), device = "jpeg
 ```
 
 
+To check against Jakob's list
+
+```{r}
+df_reg_250 %>%
+  mutate(treated = case_when(
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age >= 28 ~ "Treated",
+    electricity_parish_born == 1 & electricity_parish_living_in == 1 & age < 28 ~ "Too young to be treated",
+    TRUE ~ "Control"
+  )) %>% 
+  inner_join(electricity_jobs, by = c("napp_title" = "title")) %>% 
+  filter(Electricity_related == TRUE) %>% 
+  count(yrke.x, sort = T) %>% 
+  filter(!str_detect(yrke.x, "elektr|Elektr"))
+```
+
 
 
 
