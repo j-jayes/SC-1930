@@ -292,6 +292,11 @@ server <- function(input, output) {
         color = "#444444", weight = 1, smoothFactor = 1,
         opacity = 1.0, fillOpacity = 0.5, popup = ~ parish_name
       ) %>%
+      addPolygons(
+        data = st_map_new %>% filter(!type == "Electricity parish"),
+        color = "midnightblue", weight = 1, smoothFactor = 1,
+        opacity = 1.0, fillOpacity = 0.5, popup = ~ str_c(parish_name, "\n", parish_code)
+      ) %>%
       addPolylines(data = df_elec_map_grid()) %>%
       clearMarkers() %>%
       addCircleMarkers(

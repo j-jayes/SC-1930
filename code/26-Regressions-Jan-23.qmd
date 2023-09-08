@@ -315,7 +315,7 @@ df_reg_250 %>%
     female == 0,
     treated != "Too young to be treated",
     age <= 45,
-    !is.na(income_incl_zero),
+    !is.na(log_income_incl_zero),
     !is.na(hisclass_group_abb)
   ) %>%
   inner_join(hisclass_order) %>%

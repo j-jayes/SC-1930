@@ -1,0 +1,27 @@
+---
+title: "Untitled"
+format: html
+---
+
+## Purpose
+
+Export population at parish level to match to first-stage
+
+```{r}
+library(tidyverse)
+
+df_reg <- read_rds(here::here("data", "clean_data", "df_ref.rds"))
+
+df_reg %>% 
+  count(scbkod) %>% 
+  arrange(desc(n)) %>% 
+  mutate(ref_code = case_when(
+    nchar(scbkod) == 5 ~ str_c("SE/0", scbkod, "000"),
+    TRUE ~ str_c("SE/", scbkod, "000")
+  )) %>%
+  distinct() %>% 
+  write_csv2(here::here("utils", "population_by_parish_1930.csv"))
+
+```
+
+

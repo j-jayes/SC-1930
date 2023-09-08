@@ -1,0 +1,113 @@
+---
+title: "Export data to Stata May 2023"
+format: html
+---
+
+# Read in data
+
+```{r}
+library(tidyverse)
+df_reg <- read_rds(here::here("data", "clean_data", "df_ref.rds"))
+```
+
+/*******************************
+* Research Outline
+*******************************/
+
+/**************************************
+* 1. Completely Focused on the Shock 
+**************************************/
+
+## Treated parishes
+
+TODO: Anything touching the Western Line in 1926 that is between the two hydro power stations.
+
+```{r}
+
+```
+
+
+## Parishes and Controls:
+// Are they balanced? 
+
+```{r}
+df_reg
+
+
+```
+
+
+// Structured Do Files:
+// Create the shock in one file.
+// Vary the shock. 
+
+// Boundaries for the Control:
+// Which boundaries should be used? 
+
+// Age Span Shocked:
+// Where do we make the age cutoffs?
+
+// Save the Regression Data. 
+
+// Structure Set:
+// Balance tests based on different treatment and control groups.
+// Decide on the main specification.
+// Move the remainder to the appendix.
+
+// Replication data does not have to be from the original 1930 census.
+// Replication data must be anonymized and all unnecessary variables removed.
+
+// Nice to Have:
+
+/**************************************
+* 2. Results 
+**************************************/
+
+// Unemployment:
+// Number of people included in the census with no occupation listed or listed as unemployed.
+// Compare treated to control groups.
+// Do the jobs disappear comparing treated parishes to control parishes? 
+
+// Income Effect without Controls:
+// On average, how much more did they earn? 
+
+// Income Effect with Controls:
+// How much is due to what we can control for? 
+
+// Inequality Results:
+// Higher income shares up to the 80th percentile of the income distribution. 
+
+// Wealth Aggregates and Wealth Inequality:
+// (Optional)
+
+/**************************************
+* 3. Mechanisms 
+**************************************/
+
+// Structural Change as a Control and Mechanism:
+// Probit for the probability of having an electricity-related job, conditional on being born in an electricity parish.
+// Add the same regression, but with if you live in your parish of birth.
+// Report the average stayer share being higher among treated parishes.
+// Scale these coefficients for easy interpretation.
+// "E.g., being born in an electricity parish raised your probability of having an electricity job by a factor of X."
+
+/**************************************
+* 4. Winners and Losers
+**************************************/
+
+// Income for Stayers and Movers - The Interaction. 
+
+// Stayers without Electricity Jobs:
+// Still had higher incomes.
+// S-shaped graph. 
+
+// Shocked by Electricity and Working in Agriculture:
+// Do they have lower income compared to those not born in an electricity parish?
+// Limited to farm workers.
+
+// Are they more likely to live in another parish than their parish of birth?
+
+
+```{r}
+
+```

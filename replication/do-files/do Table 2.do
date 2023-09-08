@@ -1,9 +1,9 @@
-version 16
 clear all
 set more off
 
 /* Insert your own pathname here */
 * cd "[path]/replication/"
+cd "C:\Users\User\Documents\Recon\SC-1930\replication\"
 
 use "data/data Table 2", clear
 

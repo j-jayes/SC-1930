@@ -1,0 +1,1077 @@
+---
+title: "20th April Talk"
+format: html
+---
+
+## Purpose
+
+- Broad and interesting talk
+- What does economic history tell us about new technology.
+
+My prompt:
+
+I have a dataset of people in the Swedish Census of 1930. I am interested in electrification - I have a sample of parishes that got access to electricity prior to their neighbouring parishes and who as a result could see their inhabitants sort into electricity related jobs at higher rates than their neighbours. I have now got a list of jobs, those that are directly electricity related, indirectly related to electricity, and not related. I want to ask a question like "how did the incomes of the three groups differ between electricity and non-electricity parishes?" and "Did the workers in the three groups migrate in to the electricity parishes from different areas?" which I think I can answer with my dataset.
+
+
+## Analysis plan:
+
+### 1. Data preparation:
+
+a. Clean and preprocess the dataset, if necessary.
+
+b. Ensure that the dataset includes the relevant variables for your analysis, such as job type, income, parish, electrification status, and migration information.
+
+c. Categorize jobs into the three groups: directly electricity-related, indirectly related, and not related.
+
+d. Create a binary variable for electrification status (1 if a parish has access to electricity, 0 otherwise). 
+
+
+```{r}
+# read in data
+# cleaning is done elsewhere
+library(tidyverse)
+theme_set(theme_light())
+df_reg <- read_rds(here::here("data", "clean_data", "df_ref.rds"))
+
+library(showtext)
+library(ggtext)
+## Loading Google fonts (https://fonts.google.com/)
+font_add_google("IBM Plex Mono", "ibm")
+font_add_google("Roboto", "roboto")
+
+showtext_opts(dpi = 300)
+showtext_auto(enable = TRUE)
+
+```
+
+
+```{r}
+# relevel occupational groups - 
+df_reg <- df_reg %>%
+  mutate(
+    hisclass_group_abb = fct_relevel(hisclass_group_abb, "Farmers and fishermen"),
+    age_2 = age^2) %>%
+    mutate(across(.cols = c(income_incl_zero, income_imputed_mean, income_imputed_median), log, .names = "log_{.col}"))
+
+# select just the treatment and control individuals within the 250 km band
+df_reg_250 <- df_reg %>%
+  filter(
+    tce_group_250 %in% c("control", "treatment"),
+    adult_1930 == "Adult"
+  )
+```
+
+```{r}
+# c. Categorize jobs into the three groups: directly electricity-related, indirectly related, and not related.
+
+df_reg_250 <- df_reg_250 %>%
+  mutate(electricity_direct = case_when(
+    str_detect(yrke.y, regex("elektr", ignore_case = TRUE)) ~ 1,
+    yrke.y == "Elmontör" ~ 1,
+    str_detect(yrke.y, "Linjearbetare") ~ 1,
+    str_detect(yrke.y, "Kraftverksarbetare") ~ 1,
+    TRUE ~ 0
+  ))
+```
+
+
+```{r}
+df_reg_250 <- df_reg_250 %>%
+  mutate(electricity_indirect = case_when(
+    yrke.x %in% c(
+      "Maskinist",
+      "Pappersbruksarbetare",
+      "Verkstadsarbetare",
+      "Metallarbetare",
+      "Textilarbeterska",
+      "Sömmerska s. e.",
+      "Träarbetare",
+      "Järnverksarbetare",
+      "Montör",
+      "Valsverksarbetare",
+      "Sömmerska s.e.",
+      "Bryggeriarbetare",
+      "Gjuteriarbetare",
+      "Rörverksarbetare",
+      "Smidesarbetare",
+      "Pappersfabriksarbetare",
+      "Maskinarbetare",
+      "Plåtslageriarbetare",
+      "Filare",
+      "Skofabriksarbetare",
+      "Järnbruksarbetare",
+      "Slakteriarbetare",
+      "Svarvare",
+      "Glasslipare",
+      "Tegelarbetare",
+      "Snickerifabriksarbetare",
+      "Färgeriarbetare",
+      "Järnsvarvare",
+      "Mejeribiträde",
+      "Sågverksarbetare",
+      "Tegelfabriksarbetare",
+      "Mejerist",
+      "Fabriksarbeterska",
+      "Smedsarbetare",
+      "Träsliperiarbetare",
+      "Filare",
+      "Sågare",
+      "Mekaniker",
+      "Tändsticksfabriksarbetare",
+      "Telefonarbetare",
+      "Skoarbetare",
+      "Metallarbetare",
+      "Snickeriarbetare",
+      "Trämassearbetare",
+      "Maskinsnickare",
+      "Pappersbruksarbetare",
+      "Textilarbetare Vävare",
+      "Smedmästare",
+      "Textilarbetare väv.",
+      "Spinnerska",
+      "Gjuteriarbetare",
+      "Möbelsnickeriarbetare",
+      "Tillskärare",
+      "Pressare",
+      "Mekanisk verkstadsarbetare",
+      "Tandtekniker",
+      "Varvsarbetare",
+      "Martinarbetare",
+      "Textilfabriksarbetare",
+      "Järnvägsverkstadsarbetare",
+      "Valsverksarbetare vid järnbruk",
+      "Fabriksarbetare",
+      "Smed s. e.",
+      "Maskinist",
+      "Sulfitfabriksarbetare",
+      "Verkstadsarbetare",
+      "Montör",
+      "Tändsticksfabriksarbeterska",
+      "Plåtverksarbetare",
+      "Kopparslagare",
+      "Lådfabriksarbetare",
+      "Textilfabriksarbetare",
+      "Gjutare",
+      "Pappersarbetare",
+      "Smedslärling",
+      "Bilmontör",
+      "Ingenjör",
+      "Fabrikör",
+      "Spolerska",
+      "Textilfabriksarbeterska",
+      "Hyttarbetare",
+      "Smältverksarbetare",
+      "Möbelfabriksarbetare",
+      "Svarvare",
+      "Tobaksarbetare",
+      "Tråddragare",
+      "Smed",
+      "Konfektionssömmerska",
+      "Pressare",
+      "Bageriarbetare",
+      "Slöjdare",
+      "Kartongarbetare",
+      "Verkmästare",
+      "Sulfitfabriksarbetare",
+      "Modellsnickare",
+      "Plåtslagare",
+      "Spinnare",
+      "Järnsvarvare",
+      "Ritare",
+      "Tändsticksfabriksarbetare",
+      "Skofabriksarbetare",
+      "Motorskötare",
+      "Appretörarbetare",
+      "Chokladarbetare",
+      "Maskinarbetare",
+      "Trikåfabriksarbetare",
+      "Cellulosafabriksarbetare",
+      "Slaktare s.e.",
+      "Bleckslagare",
+      "Sockerbruksarbetare",
+      "Telefonreparatör",
+      "Garvare",
+      "Linnesömmerska",
+      "Trämassefabriksarbetare",
+      "Martins-arbetare vid järnbruk",
+      "Spikfabriksarbetare",
+      "Spinneriarbetare",
+      "Smidesarbetare",
+      "Svetsare",
+      "Korsettarbetare",
+      "Yllefabriksarbetare",
+      "Masugnsarbetare",
+      "Smörjare",
+      "Cellulosafabriksarbetare ",
+      "Tryckeriarbetare",
+      "Slipmassefabriksarbetare",
+      "Reparatör",
+      "Tegelbruksarbetare",
+      "Bryggeriarbetare",
+      "Smedarbetare",
+      "Mekanikerarbetare",
+      "Glasverksarbetare",
+      "Textilarbetare Väverska",
+      "Pälssömmerska",
+      "Kalkbruksarbetare",
+      "Bleckslageriarbetare",
+      "Polerare",
+      "Sågverksägare",
+      "Faktor",
+      "Stålverksarbetare",
+      "Textilarbetare Rullerska",
+      "Jutefabriksarbeterska",
+      "Verktygsarbetare",
+      "Rullerska",
+      "Armaturarbetare",
+      "Cementfabriksarbetare",
+      "Hyvlare",
+      "Litografiarbeterska",
+      "Sågarbetare",
+      "Fräsare",
+      "Textilarbetare väveri",
+      "Sågmästare",
+      "Fabrikssömmerska",
+      "Tegelarbetare",
+      "Sortererska vid pappersbruk",
+      "Tricotstickerska",
+      "Laboratoriebiträde",
+      "Textilarbetare Spinnare",
+      "Fabriksarbetare papp.",
+      "Stickerska s.e.",
+      "Hemsömmerska",
+      "Maskinpassare vid pappersbruk",
+      "Varvsarbetare",
+      "Rördrageriarbetare vid järnbruk",
+      "Plåtslageriarbetare",
+      "Emaljarbetare",
+      "Tvinnerska",
+      "Sågverksförman",
+      "Sömmerska s. e.",
+      "Trikåarbetare",
+      "Kaolinbruksarbetare",
+      "Fanerfabriksarbetare",
+      "Lådfabriksarbetare",
+      "Textilarbetare Sömmerska",
+      "Textilarbetare Spolerska",
+      "Maskinstickerska",
+      "Fabriksarbetare cellulosafabrik",
+      "Trämassefabriksarbetare",
+      "Ritare",
+      "Typograflärling",
+      "Kappsömmerska",
+      "Sömmerska textil",
+      "Jutefabriksarbetare",
+      "Fabriksarbeterska",
+      "Fabriksarbetare sulfatfabrik",
+      "Fabriksarbeterska Väverska",
+      "Möbelfabrikör",
+      "Klensmed",
+      "Maskinförare vid pappersbruk",
+      "Plåtslageriarbetare M. V.",
+      "Tillskärerska",
+      "Maskinskötare",
+      "Smidesmästare",
+      "Margarinfabriksarbetare",
+      "Gummifabriksarbetare",
+      "Maskinförare",
+      "Skomakeriarbetare",
+      "Avsynare",
+      "Läderarbetare",
+      "Karamellfabriksarbetare",
+      "Plåtarbetare",
+      "Metallduksvävare",
+      "Tråddrageriarbetare",
+      "Sömmerska Hemmadotter",
+      "Snickeriförman",
+      "Kappfabrikssömmerska",
+      "Borrare",
+      "Tryckare",
+      "Borrare",
+      "Sömmerska s.e.",
+      "Snickerifabrikör",
+      "Svarvare Arbetare",
+      "Valsare",
+      "Mejerinna",
+      "Smärglare",
+      "Smältare",
+      "Brädgårdsförman",
+      "Kakelfabriksarbetare",
+      "Varperska",
+      "Konservfabriksarbetare",
+      "Mekaniker",
+      "Svetsare",
+      "Gjutmästare",
+      "Järnsvarvare M. V.",
+      "Kopparslageriarbetare",
+      "Maskinsnickeriarbetare",
+      "Karamellarbetare",
+      "Kranmaskinist ",
+      "Maskinmästare",
+      "Smedsdräng",
+      "Textilarbetare",
+      "Snickare vid möbelfabrik",
+      "Torvströfabriksarbetare",
+      "Smedmästare ag.",
+      "Bilmontör",
+      "Guldlistarbetare",
+      "Västsömmerska",
+      "Sågverksarbetare f.",
+      "Underofficer Maskinist",
+      "Tråddrageriarbetare vid järnbruk",
+      "Fabrikssnickare",
+      "Tekniskt biträde",
+      "Fabriksarbetare vid Kallvalsverk",
+      "Spårvagnskonduktör",
+      "Smedsgesäll",
+      "Väveriarbetare",
+      "Borstbinderiarbetare",
+      "Textilförman",
+      "Verkstadsförman",
+      "Bobinfabriksarbetare",
+      "Cykelarbetare",
+      "Sågställare",
+      "Plyserska",
+      "Linderska",
+      "Plåtslagare vid mekanisk verkstad",
+      "Väverska textilfabrik",
+      "Sorterare",
+      "Galvaniseringsarbetare",
+      "Industriarbetare",
+      "Tricotsömmerska",
+      "Beredningsarbetare",
+      "Kopparslagare",
+      "Väverska",
+      "Maskinsättare",
+      "Väverska textil",
+      "Syfabrikssömmerska",
+      "Lokomotivförare",
+      "Radiotelegrafist",
+      "Tunnfabriksarbetare",
+      "Linjearbetare",
+      "Plåtslagare s. e.",
+      "Sågägare",
+      "Sågverksmaskinist",
+      "Maskinmjölkare",
+      "Kranförare",
+      "Maskinformare",
+      "Telefonföreståndare",
+      "Plåtslagare s.e.",
+      "Barkhusarbetare Pappersbruk",
+      "Eldare vid pappersbruk",
+      "Textilarbetare varp.",
+      "Kullagerarbetare",
+      "Gravör",
+      "Kärnmakare",
+      "Väverska s. e.",
+      "Sliparbetare",
+      "Glödgare",
+      "Lokförare järnväg",
+      "Radiomontör",
+      "Linslagare",
+      "Diversearbetare Pappersbruk",
+      "Sockerfabriksarbetare",
+      "Porslinsfabriksarbetare",
+      "Sömmerska Skräddare",
+      "Tobaksarbeterska",
+      "Stålsynare vid järnbruk",
+      "Chokladarbeterska",
+      "Facitarbetare",
+      "Stabbläggare",
+      "Mejerska",
+      "Stenarbetareänka",
+      "Tricotarbetare",
+      "Silverpolererska",
+      "Mejeribiträde",
+      "Träindustriarbetare",
+      "Maskinarbetare vid snickerifabrik",
+      "Tapetfabriksarbetare",
+      "Stenkrossarbetare",
+      "Kartongfabriksarbetare",
+      "Brukstjänsteman",
+      "Glaspackare",
+      "Möbelfabrikssnickare",
+      "Fabriksarbetare Ägare",
+      "Järnarbetare mekanisk verkstad",
+      "Verkstadsarbetare Filare",
+      "Gummireparatör",
+      "Textilarbeterska",
+      "Diamantborrare",
+      "Rorgängare",
+      "Textilarbetare kamgarnspinneri",
+      "Bänkarbetare",
+      "Cellulosafabriksarbetare Diversearbetare",
+      "Sockerbruksarbetare",
+      "Gjutare M. V.",
+      "Övermaskinist",
+      "Spiksmed",
+      "Fräsare",
+      "Gummiarbetare",
+      "Margarinarbetare",
+      "Klädesfabriksarbetare",
+      "Bleckslageriarbetare",
+      "Textilarbetare Appretör",
+      "Ackumulatorsfabriksarbetare",
+      "Lastare",
+      "Bergsingenjör",
+      "Porslinsarbetare",
+      "Spinnare textil",
+      "Urmakare",
+      "Rensare",
+      "Konfektionsarbetare",
+      "Smärglare",
+      "Repslageriarbetare",
+      "Sömmerska Konfektion",
+      "Vävare yllefabrik",
+      "Sömnadsarbetare",
+      "Borstarbetare",
+      "Lagersömmerska",
+      "Verkstadsarbetare vid järnbruk",
+      "Verkstadsarbetare vid järnbruk",
+      "Träullfabriksarbetare",
+      "Järnarbetare Pappersbruk",
+      "Synerska",
+      "Konfektionspressare",
+      "Stålvägare vid järnbruk",
+      "Sömnadsarbeterska",
+      "Glasarbetare",
+      "aaaa",
+      "Spolerska textil",
+      "Mekanikerarbetare",
+      "Glasskärare",
+      "Rullerska textil",
+      "Mek. arbetare",
+      "Sågare",
+      "Maskinreparatör",
+      "Gödningsfabriksarbetare",
+      "Glasslipare",
+      "Reparatör vid pappersbruk",
+      "Vävare textilfabrik",
+      "Plåtslageriarbetare v. mek. verkst.",
+      "Silverpolererska",
+      "Tvålfabriksarbetare",
+      "Gårdfarihandlare",
+      "Sömmerska fabrik",
+      "Biografmaskinist",
+      "Textilarbetare Spolare",
+      "Sömnadsarbetare",
+      "Martinsarbetare",
+      "Manglerska",
+      "Litograf",
+      "Sågbladsarbetare vid järnbruk",
+      "Textilarbetare Tvisterska",
+      "Byxsömmerska",
+      "Väverska yllefabrik",
+      "Hattfabriksarbetare",
+      "Dussinsömmerska",
+      "Kragsömmerska",
+      "Cellulosafabriksarbetare Reparatör",
+      "Lagerbiträde textil",
+      "Litografarbetare",
+      "Filhuggare",
+      "Rullare vid pappersbruk",
+      "Skofabriksarbeterska",
+      "Fabriksarbetare cellulosa",
+      "Putsare Arbetare",
+      "Kantsågare",
+      "Galvanisör",
+      "Ingeniör",
+      "Elektriker Montör",
+      "Bindgarnsarbetare",
+      "Bruksarbetare Gjutare",
+      "Lackerare",
+      "Sömmerska duss.",
+      "Sättare",
+      "Sömmerskearbetare",
+      "Mejerimaskinist",
+      "Varvsplåtslagare",
+      "Filhuggare",
+      "Stålsynare",
+      "Hyttarbetare Järnverk",
+      "Makaroniarbetare",
+      "Magasinarbetare",
+      "Pappersbrukfabriksarbetare",
+      "Väskfabriksarbetare",
+      "Textilarbetare Varperska",
+      "Marmeladarbeterska",
+      "Klädsömmerska",
+      "Textilsömmerska",
+      "Fabriksarbetare vid järnbruk",
+      "Torkare vid pappersbruk",
+      "Spinnerska textilfabrik",
+      "Sömmerska se.",
+      "Fabriksförman",
+      "Utearbetare vid sulfitfabrik",
+      "Textilfabriksarbeterska",
+      "Tillskärare",
+      "Mjölkning",
+      "Tyglagerska yllefabrik",
+      "Stickerska textil",
+      "Typograf Sättare",
+      "Textilarbetare Färgare",
+      "Sintringsarbetare",
+      "Påsfabriksarbetare",
+      "Järnarbetare Kockum",
+      "Sömmerska trikåfabrik",
+      "Färgeriarbetare textil",
+      "Konfektionsfabrikssömmerska",
+      "Fabriksarbetare pappersbruk",
+      "Sågförman",
+      "Grovarbetare vid järnbruk",
+      "Förtennare",
+      "Vaddfabriksarbetare",
+      "Tricotstickare",
+      "Pressare konfektion",
+      "Cellulosafabriksarbetare",
+      "Presserska",
+      "Instrumentmakare",
+      "Reparatör Pappersbruk",
+      "Segelsömmare",
+      "Sömmerska vid fabrik",
+      "Fabriksarbetare Eldare",
+      "Torvfabriksarbetare",
+      "Bindgarnsarbeterska",
+      "Styckmästare",
+      "Civilingenjör",
+      "Vävare textil",
+      "Stenslipare",
+      "Tillskärare konfektion",
+      "Maskinmontör",
+      "Textilarbetare Solverska",
+      "Maskinist vid sågverk",
+      "Motorförare",
+      "Hjälpmontör",
+      "Väverska Holm. br.",
+      "Revolversvarvare",
+      "Varvsförman",
+      "Sömmerska vid fabrik",
+      "Järnarbetare vid pappersbruk",
+      "Fabriksarbetare Eldare",
+      "Gjuteriarbetare M. V.",
+      "Torvfabriksarbetare",
+      "Spisbrödsfabriksarbetare",
+      "Bindgarnsarbeterska",
+      "Sågverksarbetare Diversearbetare",
+      "Civilingenjör",
+      "Cementgjuteriarbetare",
+      "Vävare textil",
+      "Tillskärare konfektion",
+      "Verkstadsägare",
+      "Maskinmontör",
+      "Textilarbetare Solverska",
+      "Verksarbetare",
+      "Maskinist vid sågverk",
+      "Bryggeriägare",
+      "Martins-arbetare",
+      "Vällare",
+      "Vattenfabriksarbetare",
+      "Glasarbetare Slipare",
+      "Järnarbetare Filare",
+      "Gjuterihantlangare",
+      "Manufakturarbetare",
+      "Mejslare",
+      "Trävaruarbetare",
+      "Typograf Tryckare",
+      "Telefonstationsföreståndarinna",
+      "Sömmerska herrkonfektion",
+      "Maskinförman",
+      "Mejerist Föreståndare",
+      "Resårfabriksarbetare",
+      "Dessinatör",
+      "Kärnmakare Arbetare",
+      "Smed vid stenhuggeri",
+      "Grovarbetare Pappersbruk",
+      "Brädgårdsarbetare Stabbläggare",
+      "Maskinslipare",
+      "Sågverksarbetare Lägenhetsägare",
+      "Snickeriarbetare Möbel",
+      "Fabriksarbetare Pappersbruk",
+      "Förman Pappersbruk",
+      "Tändsticksfabriksförman",
+      "Verkstadsarbetare vid mekanisk verkstad",
+      "Bleckvarufabriksarbetare",
+      "Linnearbetare",
+      "Skräddarearbetare",
+      "Ciselör",
+      "Textilarbetare Diversearbetare",
+      "Mejerist",
+      "Filare mekanisk verkstad",
+      "Mekanisk verkstadslärling",
+      "Verkstadsarbetare Plåtslagare",
+      "Järnsvarvare vid stålpressningsverk",
+      "Sågverksarbetare Smörjare",
+      "Telefonväxelföreståndare",
+      "Filare vid stålpressningsverk",
+      "Fabriksarbetare Slipare",
+      "Rullare å pappersbruk",
+      "Maskinsnickare vid möbelfabrik",
+      "Textilarbetare Tvinnerska",
+      "Kullagerarbetare",
+      "Knivsmed",
+      "Fräsare Arbetare",
+      "Järnarbetare Kockums",
+      "Sömmerska Lägenhetsägare",
+      "Linnesömmerska",
+      "Filare Mekanisk verkstad",
+      "Sågverksarbetare Eldare",
+      "Textilarbetare Spinneri",
+      "Smed Arbetare",
+      "Stenarbetare vid stenindustri",
+      "Kontorist textil",
+      "Radiotelegrafist",
+      "Järnvägsverkstadsförman",
+      "Typograf Maskinsättare",
+      "Mekaniker s. e.",
+      "Gjutmästare",
+      "Vågfabriksarbetare",
+      "Rörläggningsarbetare",
+      "Rörläggare Arbetare",
+      "Kabelarbetare",
+      "Knivarbetare",
+      "Verkmästare vid pappersbruk",
+      "Textilarbetare Smörjare",
+      "Verkstadsarbetare Svarvare",
+      "Järnarbetare vid mekanisk verkstad",
+      "Sågverksarbetare Chaufför",
+      "Textilarbetare Holm. br.",
+      "Arbetare å Kalmar Bobin",
+      "Svarvarbetare",
+      "Virapassare Pappersbruk",
+      "Klensmed vid järnbruk",
+      "Hjälprullare Pappersbruk",
+      "Mekanisk verkstadsarbetare",
+      "Textilarbetare bom. väv.",
+      "Valsarbetare",
+      "Stärkelsefabriksarbetare",
+      "Martinarbetare Järnverk",
+      "Radiofabriksarbetare",
+      "Toffelfabriksarbetare",
+      "Maskinuppsättare",
+      "Möbelsnickarearbetare",
+      "Svarvare vid bobinfabrik",
+      "Riktare",
+      "Gelbgjutare",
+      "Metalltryckare",
+      "Fabriksarbetare Grovarbetare",
+      "Linjeförman",
+      "Sodabrännare vid pappersbruk",
+      "Träullsfabriksarbetare",
+      "Sågverksarbetare Kantare",
+      "Verkmästare vid mekanisk verkstad",
+      "Sågarbetare vid chokladfabrik",
+      "Tråddragare järnbruk",
+      "Slipare vid pappersbruk",
+      "Cellulosafabriksarbetare Eldare",
+      "Mekaniker s.e."
+    ) ~ 1,
+    TRUE ~ 0
+  ))
+```
+
+```{r}
+# create job type variable
+df_reg_250 <- df_reg_250 %>%
+  mutate(job_type = case_when(
+    electricity_direct == 1 ~ "Direct electricity job",
+    electricity_indirect == 1 ~ "Indirect electricity job",
+    TRUE ~ "Other job"
+  ))
+```
+
+
+```{r}
+library(haven)
+df_reg_250 %>% 
+  mutate(schooling_abb = factor(schooling_abb)) %>% 
+  select(-yrke.x) %>% 
+  rename(yrke = yrke.y) %>% 
+  write_dta("data/stata/Swedish-census-1930-clean-250km-threshold_job_types.dta", version = 15)
+```
+
+
+2. Descriptive statistics:
+
+a. Calculate summary statistics for each job group, including mean income, median income, and income distribution within each parish type (electrified and non-electrified).
+
+```{r}
+df_reg_250 %>%
+  filter(log_income_incl_zero > 0) %>%
+  mutate(electricity_parish_living_in_lab = case_when(
+    electricity_parish_living_in == 1 ~ "Treated",
+    TRUE ~ "Control"
+  )) %>%
+  group_by(job_type, electricity_parish_living_in_lab) %>%
+  summarise(
+    mean_income = mean(log_income_incl_zero, na.rm = T),
+    median_income = median(log_income_incl_zero, na.rm = T)
+  )
+
+```
+
+```{r}
+chunks <- seq(from = 0.01, to = 1, by = 0.075)
+
+df_reg_250 %>%
+  filter(log_income_incl_zero > 0) %>%
+  mutate(electricity_parish_living_in_lab = case_when(
+    electricity_parish_living_in == 1 ~ "Treated",
+    TRUE ~ "Control"
+  )) %>%
+  filter(job_type != "Direct electricity job") %>% 
+  group_by(job_type, electricity_parish_living_in_lab) %>%
+  summarise(quantile = chunks,
+            log_income_incl_zero = quantile(log_income_incl_zero, chunks)) %>% 
+  ungroup() %>% 
+  ggplot(aes(quantile, log_income_incl_zero, colour = electricity_parish_living_in_lab)) +
+  geom_point() + 
+  geom_line() +
+  scale_x_continuous(labels = scales::percent_format()) +
+  scale_y_continuous(limits = c(NA, 10)) +
+  facet_wrap(~ job_type) +
+  labs(
+    y = "Log income",
+    x = "Percentile of income distribution",
+    title = "Income S-curves for 
+                          <b><span style = 'color:#9C6114;'>treated</span></b> and 
+                          <b><span style = 'color:#000080;'>control</span></b> individuals"
+  ) +
+  scale_colour_manual(values = c("#000080", "#9C6114")) +
+  theme(
+    # panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.title = element_markdown(size = 32, family = 'roboto'),
+    plot.title.position = "plot",
+    legend.position = "none",
+    text = element_text(family = 'ibm', size = 18)
+  ) 
+  
+ggsave(filename = here::here("summary_figs/income_job_type_plot.jpeg"), device = "jpeg", width = 290, height = 231, units = "mm", dpi = 300)
+  
+```
+
+
+```{r}
+df_reg_250 %>% 
+  filter(between(age, 15, 45)) %>% 
+  count(occ_hisco, sort = T)
+
+df_reg_250 %>%
+  filter(between(age, 15, 45)) %>%
+  mutate(unemployed = is.na(occ_hisco) | occ_hisco == 99999) %>%
+  group_by(tce_group_250) %>%
+  summarize(pct_employed = mean(!unemployed)) %>%
+  ungroup() %>%
+  mutate(pct_unemployed = 1 - pct_employed) %>%
+  mutate(
+    tce_group_250 = str_to_title(tce_group_250),
+    tce_group_250 = case_when(
+      tce_group_250 == "Treatment" ~ "Treated",
+      TRUE ~ tce_group_250
+    )
+  ) %>%
+  pivot_longer(-tce_group_250) %>%
+  mutate(name = case_when(
+    name == "pct_employed" ~ "Employed",
+    TRUE ~ "Unemployed"
+  )) %>%
+  mutate(value_label = scales::percent(value)) %>%
+  ggplot(aes(value, tce_group_250, fill = name)) +
+  geom_col() +
+  scale_fill_manual(values = c("#6666ff", "#f0c389")) +
+  geom_text(aes(label = value_label), hjust = 1.1, cex = 10) +
+  scale_x_continuous(labels = scales::percent_format()) +
+  labs(
+    x = "Share of labour force",
+    y = NULL,
+    title = "Share of labour force who are             <b><span style = 'color:#f0c389;'>unemployed</span></b> and 
+                          <b><span style = 'color:#6666ff;'>employed</span></b>",
+    fill = NULL
+  ) +
+  theme(
+    # panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.title = element_markdown(size = 32, family = 'roboto'),
+    plot.title.position = "plot",
+    legend.position = "none",
+    text = element_text(family = 'ibm', size = 32)
+  ) 
+
+ggsave(filename = here::here("summary_figs/employment_share.jpeg"), device = "jpeg", width = 290, height = 231, units = "mm", dpi = 300)
+```
+
+
+```{r}
+# Your existing code to calculate the proportions
+proportions_df <- df_reg_250 %>% 
+  filter(between(age, 15, 45)) %>% 
+  mutate(unemployed = is.na(occ_hisco) | occ_hisco == 99999) %>% 
+  group_by(tce_group_250) %>% 
+  summarize(pct_employed = mean(!unemployed)) %>% 
+  ungroup()
+
+# Get the proportions for each group
+group1_employed <- proportions_df$pct_employed[proportions_df$tce_group_250 == 'control']
+group2_employed <- proportions_df$pct_employed[proportions_df$tce_group_250 == 'treatment']
+
+# Perform the t-test
+ttest_result <- t.test(group1_employed, group2_employed)
+
+# Print the results
+print(ttest_result)
+```
+
+
+```{r}
+df_reg_250 %>%
+  filter(between(age, 15, 45)) %>%
+  mutate(unemployed = is.na(occ_hisco) | occ_hisco == 99999) %>%
+  group_by(tce_group_250, scbkod) %>%
+  summarize(pct_employed = mean(!unemployed)) %>%
+  ungroup() %>%
+  mutate(pct_unemployed = 1 - pct_employed) %>%
+  mutate(
+    tce_group_250 = str_to_title(tce_group_250),
+    tce_group_250 = case_when(
+      tce_group_250 == "Treatment" ~ "Treated",
+      TRUE ~ tce_group_250
+    )
+  ) %>% 
+  ggplot(aes(pct_unemployed, fill = tce_group_250)) +
+  geom_density(alpha = .5, adjust = .8) +
+  scale_fill_manual(values = c("#6666ff", "#f0c389")) +
+  scale_x_continuous(labels = scales::percent_format()) +
+  labs(
+    x = "Share of labour force unemployed",
+    y = NULL,
+    title = "Share of unemployed in             <b><span style = 'color:#f0c389;'>treated</span></b> and 
+                          <b><span style = 'color:#6666ff;'>control</span></b> parishes",
+    fill = NULL
+  ) +
+  theme(
+    # panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.title = element_markdown(size = 32, family = 'roboto'),
+    plot.title.position = "plot",
+    legend.position = "none",
+    text = element_text(family = 'ibm', size = 32)
+  ) 
+
+ggsave(filename = here::here("summary_figs/employment_share_density.jpeg"), device = "jpeg", width = 290, height = 231, units = "mm", dpi = 300)
+```
+
+
+
+Okay so I am going to break my groups up - such that there is only the indirect and other jobs. 
+
+b. Visualize the income distributions using histograms, box plots, or other suitable visualizations.
+
+```{r}
+
+df_reg_250 %>%
+  ggplot(aes(log_income_incl_zero, fill = job_type)) +
+  geom_density(adjust = 2) +
+  facet_wrap(~ factor(electricity_parish_living_in), nrow = 2)
+
+df_reg_250 %>%
+  ggplot(aes(log_income_incl_zero, fill = factor(electricity_parish_living_in))) +
+  geom_density(adjust = 2, alpha = 0.7) +
+  facet_wrap(~ job_type, nrow = 2)
+
+
+```
+
+
+c. Calculate the number and proportion of workers in each job group who migrated to electrified parishes. 
+
+What share of each group migrated to electricity parishes from not electricity parishes?
+
+```{r}
+df_reg_250 %>%
+  group_by(job_type) %>%
+  count(electricity_parish_living_in, electricity_parish_born) %>% 
+  ungroup() %>% 
+  mutate(migrated_in_to_electricity = case_when())
+```
+
+
+
+3. Difference-in-differences analysis:
+
+a. To assess the income differences between the three job groups in electrified and non-electrified parishes, use a difference-in-differences (DID) approach. This will help you estimate the causal effect of electrification on income for each job group.
+
+b. Set up a regression model with income as the dependent variable and electrification status, job group, and their interaction as independent variables. Include other relevant control variables as needed.
+
+c. Estimate the model and interpret the coefficients on the interaction terms. These coefficients will represent the differences in income between electrified and non-electrified parishes for each job group. 
+
+4. Migration analysis:
+
+a. Create a categorical variable for the origin of migrants (e.g., urban, rural, or other parishes).
+
+b. Calculate the proportions of workers in each job group who migrated to electrified parishes from different areas.
+
+```{r}
+df_reg_250 %>%
+   group_by(job_type) %>%
+   count(electricity_parish_living_in, electricity_parish_born) %>%
+  ungroup() %>% 
+  mutate(in_migrant = case_when(
+    electricity_parish_living_in == 1 & electricity_parish_born == 0 ~ TRUE,
+    TRUE ~ FALSE
+  )) %>% 
+  filter(electricity_parish_living_in == TRUE) %>% 
+  group_by(job_type) %>% 
+  mutate(share_in_migrant = n / sum (n))
+```
+
+
+```{r}
+df_reg_250 %>% 
+  count(scbkod == fscbkod) %>% 
+  mutate(pct_share = n / sum(n))
+  
+  
+df_reg_250 %>% 
+  count(job_type)
+
+
+df_reg_250 %>% 
+  filter(!is.na(job_type), !is.na(electricity_parish_living_in)) %>% 
+  lm(electricity_direct ~ electricity_parish_living_in, data = .) %>% 
+  tidy()
+```
+
+
+Direct electricity jobs figure
+
+```{r}
+
+```
+
+
+```{r}
+library(margins)
+
+# Probit regression
+probit_model <- glm(electricity_direct ~ electricity_parish_living_in + age + , family = binomial(link = "probit"), data = df_reg_250 %>%
+  filter(!is.na(job_type), !is.na(electricity_parish_living_in)))
+
+# Calculate marginal effects
+marginal_effects <- margins(probit_model, atmean = TRUE)
+
+summary(marginal_effects)
+
+```
+
+
+```{r}
+# Run probit regression with control variables
+probit_model_controls <- glm(electricity_direct ~ electricity_parish_living_in + age + factor(hisclass_group_abb) + factor(schooling_abb) + factor(female), family = binomial(link = "probit"), data = df_reg_250 %>%
+  filter(!is.na(job_type), !is.na(electricity_parish_living_in), !is.na(schooling_abb), !is.na(hisclass_group_abb)))
+
+# Calculate average marginal effects
+marginal_effects_controls <- margins(probit_model_controls, atmean = TRUE)
+
+summary(marginal_effects_controls)
+
+```
+
+
+
+
+
+c. Perform a chi-square test or another appropriate statistical test to determine whether the distribution of migrants' origins differs significantly across the three job groups. 
+
+5. Robustness checks and sensitivity analysis:
+
+a. Test the robustness of your results by using alternative model specifications, such as fixed effects or random effects models.
+
+b. Conduct sensitivity analyses by excluding potential outliers or by changing the criteria for job group classification. 
+
+6. Interpretation and conclusion:
+
+a. Summarize the main findings, addressing the research questions.
+
+b. Discuss potential limitations of the study and offer suggestions for future research.
+
+
+
+### Figures and tables
+
+I want to make a figure that shows the direct electricity jobs - what are they - how much do they pay within their HISCO bracket?
+
+```{r}
+df_reg_250 %>% 
+  filter(electricity_direct == 1) %>% 
+  count(yrke.y, sort = T)
+```
+
+
+```{r}
+df_reg_250 %>%
+  group_by(hisclass_group_abb) %>%
+  filter(electricity_direct == 1) %>%
+  count(yrke.y, sort = T) %>%
+  slice_max(hisclass_group_abb, n = 5, with_ties = FALSE) %>%
+  select(-n) %>%
+  ungroup()
+```
+
+To create this figure I will -
+
+1. Get a sample of electricity related jobs
+
+```{r}
+library(tidytext)
+
+df_reg_250 %>% 
+  filter(!is.na(yrke.y),
+         !yrke.y == "") %>% 
+  group_by(job_type) %>% 
+  count(yrke.y, sort = T) %>% 
+  slice_max(n, n = 6) %>% 
+  ungroup() %>% 
+  mutate(yrke.y = str_to_title(yrke.y),
+         yrke.y = reorder_within(yrke.y, n, job_type)) %>% 
+  ggplot(aes(n, yrke.y, fill = job_type)) +
+  geom_col() +
+  scale_fill_brewer(palette = "Dark2") +
+  facet_wrap(vars(job_type), scales = "free", nrow = 3) +
+  scale_y_reordered() +
+  labs(
+    x = NULL,
+    y = NULL,
+    title = "Most common titles for our three job types",
+    fill = NULL
+  ) +
+  theme(
+    # panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.title = element_markdown(size = 32, family = 'roboto'),
+    plot.title.position = "plot",
+    legend.position = "none",
+    text = element_text(family = 'ibm', size = 18)
+  ) 
+
+ggsave(filename = here::here("summary_figs/common_job_types.jpeg"), device = "jpeg", width = 290, height = 231, units = "mm", dpi = 300)
+```
+
+
+Education levels of electricity related workers?
+
+
+```{r}
+df_reg_250 %>% 
+  filter(electricity_direct == 1) %>% 
+  select(scbkod, fscbkod, yrke.y) %>% 
+  write_rds(here::here("data", "temp", "direct_electricity_job_locations.rds"))
+
+df_reg_250 %>% 
+  filter(electricity_indirect == 1) %>% 
+  select(scbkod, fscbkod, yrke.y) %>% 
+  write_rds(here::here("data", "temp", "indirect_electricity_job_locations.rds"))
+```
+

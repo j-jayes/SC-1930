@@ -300,6 +300,57 @@ groups_1930 %>%
   )
 ```
 
+tce 250
+
+```{r}
+groups_1930 %>%
+  filter(tce_group_250 %in% c("control", "treatment")) %>% 
+  mutate(ever_iline = ifelse(ever_iline == 0, 
+                             "NEP",
+                             "EP")) %>% 
+  select(ever_iline, labforce:shc7) %>% 
+  mutate(number = "No. of Parishes") %>% 
+    tbl_summary(
+    by = ever_iline,
+    missing = "no",
+    statistic = list(
+      all_continuous() ~ "{mean} ({sd})",
+      number ~ "{n}"
+    ),
+    label = list(
+      labforce ~ "Labour force",
+      shc1 ~ "Elite share",
+      shc2 ~ "White collar share",
+      shc3 ~ "Foremen share",
+      shc4 ~ "Medium skilled share",
+      shc5 ~ "Farmers share",
+      shc6 ~ "Lower skilled share",
+      shc7 ~ "Unskilled share",
+      number ~ "No. of parishes"
+    )
+  ) %>%
+  add_difference() %>%
+  modify_header(
+    label ~ "",
+    stat_1 ~ "Electricity parish",
+    stat_2 ~ "Non-electricity parish",
+    estimate ~ "Difference",
+    p.value ~ "p-value"
+  ) %>%
+  modify_spanning_header(
+    stat_1 ~ "**(1)**",
+    stat_2 ~ "**(2)**",
+    estimate ~ "**(3)**",
+    p.value ~ "**(4)**"
+  ) %>%
+  add_significance_stars() %>% 
+  modify_column_hide(column = std.error) %>% 
+  as_kable_extra(
+    # format = "latex",
+    booktabs = T,
+    escape = TRUE
+  )
+```
 
 
 ### Function to make the table

@@ -1,0 +1,32 @@
+---
+title: "Migration map"
+format: html
+---
+
+## Migration map
+
+```{r}
+setwd(here::here("Electricity-control-groups"))
+
+df_to_join <- read_rds("df_to_join.rds")
+st_map <- read_rds("st_map.rds")
+el_paishes_1930 <- read_rds("el_paishes_1930.rds")
+
+st_map_with_el_parished <- st_map %>%
+  mutate(parish_code = as.numeric(str_sub(ref_code.x, 4, 12))) %>%
+  left_join(df_to_join)
+
+st_map_with_el_parished %>% 
+  inner_join(direct_electricity_job_locations)
+
+
+st_map_with_el_parished %>% 
+  ggplot() +
+  geom_sf(aes(fill = iline))
+
+
+
+direct_electricity_job_locations <- readRDS("~/Recon/SC-1930/data/temp/direct_electricity_job_locations.rds")
+indirect_electricity_job_locations <- readRDS("~/Recon/SC-1930/data/temp/indirect_electricity_job_locations.rds")
+```
+

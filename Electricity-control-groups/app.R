@@ -3,6 +3,7 @@ library(tidyverse)
 library(leaflet)
 library(sf)
 
+setwd(here::here("Electricity-control-groups"))
 
 df_to_join <- read_rds("df_to_join.rds")
 st_map <- read_rds("st_map.rds")
@@ -149,3 +150,4 @@ server <- function(input, output) {
 
 # Run the application
 shinyApp(ui = ui, server = server)
+

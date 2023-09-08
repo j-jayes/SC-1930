@@ -1,0 +1,17 @@
+---
+title: "Untitled"
+format: html
+---
+
+## purpose
+
+export .rds file from clean data to parkquet
+
+```{r}
+library(tidyverse)
+df_reg <- read_rds(here::here("data", "clean_data", "df_ref.rds"))
+
+library(arrow)
+write_parquet(df_reg, here::here("data", "clean_data", "df_ref.parquet"))
+```
+
